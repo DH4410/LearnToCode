@@ -14,14 +14,26 @@ const defaultResult: StoryResult = {
   errors: [],
 };
 
+const toolboxSnippets = [
+  "make a word called greeting with Hello sunny team!",
+  "make a list called nums with 2, 4, 6",
+  "make a number called target with 8",
+  "set total to sum of nums",
+  "show total",
+];
+
 export default function Home() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [program, setProgram] = useState(challenges[0].starter);
+  const [drafts, setDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(challenges.map((challenge) => [challenge.id, challenge.starter])),
+  );
   const [result, setResult] = useState<StoryResult>(defaultResult);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [celebration, setCelebration] = useState("");
+  const [showHint, setShowHint] = useState(false);
 
   const activeChallenge = challenges[activeIndex];
+  const program = drafts[activeChallenge.id] ?? "";
 
   useEffect(() => {
     const saved = window.localStorage.getItem(completionStorageKey);
@@ -44,14 +56,27 @@ export default function Home() {
   }, [completedIds]);
 
   useEffect(() => {
-    setProgram(activeChallenge.starter);
     setResult(defaultResult);
     setCelebration("");
+    setShowHint(false);
   }, [activeChallenge]);
 
   const progressPercent = Math.round(
     (completedIds.length / challenges.length) * 100,
   );
+
+  const updateProgram = (value: string) => {
+    setDrafts((current) => ({
+      ...current,
+      [activeChallenge.id]: value,
+    }));
+  };
+
+  const insertSnippet = (snippet: string) => {
+    updateProgram(
+      program.trim().length === 0 ? snippet : `${program.trimEnd()}\n${snippet}`,
+    );
+  };
 
   const runProgram = () => {
     const nextResult = runStoryProgram(program);
@@ -78,218 +103,205 @@ export default function Home() {
   const canOpenChallenge = (index: number) =>
     index === 0 || completedIds.includes(challenges[index - 1].id);
 
+  const lineCount = program.trim().length === 0 ? 0 : program.split(/\r?\n/).length;
+  const completedCount = completedIds.length;
+
   return (
-    <main className="shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">Story Code Lab</p>
-          <h1>Like Scratch, but kids write ideas in sentences.</h1>
-          <p className="hero-copy">
-            Every mission turns plain-English commands into real JavaScript
-            logic. Kids get a playful terminal, instant feedback, and challenge
-            goals that unlock one by one.
-          </p>
-        </div>
-
-        <div className="hero-card">
-          <span className="hero-card-label">Progress Map</span>
-          <strong>{completedIds.length} missions cleared</strong>
-          <div className="progress-bar">
-            <div
-              className="progress-bar-fill"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-          <p>{progressPercent}% complete</p>
-        </div>
-      </section>
-
-      <section className="workspace">
-        <aside className="mission-rail">
-          <div className="panel-header">
-            <span className="dot dot-pink" />
-            <span>Missions</span>
+    <main className="app-shell">
+      <section className="ide-window">
+        <header className="topbar">
+          <div className="brand-block">
+            <div className="brand-mark">SC</div>
+            <div>
+              <p className="brand-kicker">Story Code Lab</p>
+              <h1>Sentence Coding Studio</h1>
+            </div>
           </div>
 
-          <div className="mission-list">
-            {challenges.map((challenge, index) => {
-              const unlocked = canOpenChallenge(index);
-              const complete = completedIds.includes(challenge.id);
+          <div className="topbar-stats">
+            <div className="stat-pill">
+              <span>Mission</span>
+              <strong>
+                {activeIndex + 1}/{challenges.length}
+              </strong>
+            </div>
+            <div className="stat-pill">
+              <span>Cleared</span>
+              <strong>{completedCount}</strong>
+            </div>
+            <div className="stat-pill progress-pill">
+              <span>Progress</span>
+              <div className="progress-bar">
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </header>
 
-              return (
+        <section className="ide-grid">
+          <aside className="sidebar panel-surface">
+            <div className="section-label">Explorer</div>
+
+            <div className="mission-list">
+              {challenges.map((challenge, index) => {
+                const unlocked = canOpenChallenge(index);
+                const complete = completedIds.includes(challenge.id);
+
+                return (
+                  <button
+                    key={challenge.id}
+                    className={`mission-card ${index === activeIndex ? "active" : ""} ${
+                      complete ? "complete" : ""
+                    }`}
+                    disabled={!unlocked}
+                    onClick={() => {
+                      if (unlocked) {
+                        setActiveIndex(index);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <div className="file-row">
+                      <span className="file-icon" />
+                      <strong>{challenge.title}.story</strong>
+                    </div>
+                    <span className="mission-badge">{challenge.badge}</span>
+                    <span className="mission-status">
+                      {complete ? "Mission cleared" : unlocked ? "Open file" : "Locked"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="toolbox-card">
+              <div className="section-label">Toolbox</div>
+              <p className="toolbox-copy">
+                Tap a phrase pattern to drop it into the editor without giving away the full answer.
+              </p>
+              <div className="toolbox-list">
+                {toolboxSnippets.map((snippet) => (
+                  <button
+                    key={snippet}
+                    className="toolbox-chip"
+                    onClick={() => insertSnippet(snippet)}
+                    type="button"
+                  >
+                    {snippet}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+
+          <section className="editor-column panel-surface">
+            <div className="editor-toolbar">
+              <div className="tab-row">
+                <span className="file-tab active">{activeChallenge.title}.story</span>
+                <span className="file-tab muted">notes.md</span>
+              </div>
+
+              <div className="action-row">
+                <button className="primary-button" onClick={runProgram} type="button">
+                  Run
+                </button>
                 <button
-                  key={challenge.id}
-                  className={`mission-card ${
-                    index === activeIndex ? "active" : ""
-                  } ${complete ? "complete" : ""}`}
-                  disabled={!unlocked}
-                  onClick={() => {
-                    if (unlocked) {
-                      setActiveIndex(index);
-                    }
-                  }}
+                  className="secondary-button"
+                  onClick={() => setShowHint((current) => !current)}
                   type="button"
                 >
-                  <span className="mission-badge">{challenge.badge}</span>
-                  <strong>{challenge.title}</strong>
-                  <span>
-                    {complete
-                      ? "Cleared"
-                      : unlocked
-                        ? "Ready"
-                        : "Locked until the last mission is done"}
-                  </span>
+                  {showHint ? "Hide hint" : "Need a hint?"}
                 </button>
-              );
-            })}
-          </div>
-
-          <div className="helper-box">
-            <p className="helper-title">Sentence ideas</p>
-            <ul>
-              <li>`make a list called nums with 2, 7, 11, 15`</li>
-              <li>`set total to sum of nums`</li>
-              <li>`set pair to index pair from nums that adds to target`</li>
-              <li>`show pair`</li>
-            </ul>
-          </div>
-        </aside>
-
-        <section className="studio">
-          <div className="panel story-panel">
-            <div className="panel-header">
-              <span className="dot dot-green" />
-              <span>Mission Brief</span>
+                <button
+                  className="secondary-button"
+                  onClick={() => updateProgram("")}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
-            <span className="story-badge">{activeChallenge.badge}</span>
-            <h2>{activeChallenge.title}</h2>
-            <p>{activeChallenge.story}</p>
-            <div className="goal-box">
-              <strong>Goal</strong>
-              <p>{activeChallenge.goal}</p>
-            </div>
-            <p className="hint">Hint: {activeChallenge.hint}</p>
-          </div>
 
-          <div className="panel editor-panel">
-            <div className="panel-header">
-              <span className="dot dot-yellow" />
-              <span>Prompt Terminal</span>
+            <div className="mission-banner">
+              <div>
+                <span className="story-badge">{activeChallenge.badge}</span>
+                <h2>{activeChallenge.title}</h2>
+                <p>{activeChallenge.story}</p>
+              </div>
+              <div className="mission-mini-card">
+                <span>Win target</span>
+                <strong>{activeChallenge.winText}</strong>
+              </div>
             </div>
 
             <textarea
               className="editor"
+              placeholder={activeChallenge.placeholder}
               spellCheck={false}
               value={program}
-              onChange={(event) => setProgram(event.target.value)}
+              onChange={(event) => updateProgram(event.target.value)}
             />
 
-            <div className="button-row">
-              <button className="primary-button" onClick={runProgram} type="button">
-                Run mission
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => setProgram(activeChallenge.starter)}
-                type="button"
-              >
-                Reload starter
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => setProgram("")}
-                type="button"
-              >
-                Clear page
-              </button>
+            <div className="editor-footer">
+              <span>{lineCount} lines</span>
+              <span>{showHint ? activeChallenge.hint : "Hints stay hidden until you ask for one."}</span>
+              <span className="footer-status">
+                {celebration || (completedIds.includes(activeChallenge.id) ? "Mission cleared." : "Ready to run.")}
+              </span>
+            </div>
+          </section>
+
+          <aside className="inspector-column">
+            <div className="panel-surface info-card">
+              <div className="section-label">Mission Control</div>
+              <h3>{activeChallenge.mission}</h3>
+              <div className="goal-box">
+                <strong>How to win</strong>
+                <p>{activeChallenge.winText}</p>
+              </div>
+              <div className="coach-box">
+                <strong>Coach note</strong>
+                <p>
+                  Think about the result first, then write the shortest set of sentences that gets your robot there.
+                </p>
+              </div>
             </div>
 
-            {celebration ? <p className="success-banner">{celebration}</p> : null}
-          </div>
+            <div className="panel-surface console-card">
+              <div className="section-label">Console</div>
+              <pre className="console-view">
+                {result.output.length > 0
+                  ? result.output.join("\n")
+                  : "Run your code to wake up the console."}
+              </pre>
+            </div>
 
-          <div className="panel examples-panel">
-            <div className="panel-header">
-              <span className="dot dot-blue" />
-              <span>Example Phrases</span>
+            <div className="panel-surface code-card">
+              <div className="section-label">Behind The Scenes</div>
+              <pre className="code-view">
+                {result.generatedCode.length > 0
+                  ? result.generatedCode.join("\n")
+                  : "// Your translated JavaScript will appear here."}
+              </pre>
+              <div className="debug-list">
+                {result.errors.length > 0 ? (
+                  result.errors.map((error) => (
+                    <p key={error} className="error-line">
+                      {error}
+                    </p>
+                  ))
+                ) : result.steps.length > 0 ? (
+                  result.steps.map((step) => <p key={step}>{step}</p>)
+                ) : (
+                  <p>The coach feed will describe what happened after you run the mission.</p>
+                )}
+              </div>
             </div>
-            <div className="example-list">
-              {activeChallenge.examples.map((example) => (
-                <button
-                  key={example}
-                  className="example-chip"
-                  onClick={() =>
-                    setProgram((current) =>
-                      current.trim().length === 0
-                        ? example
-                        : `${current}\n${example}`,
-                    )
-                  }
-                  type="button"
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-          </div>
+          </aside>
         </section>
-
-        <aside className="results">
-          <div className="panel">
-            <div className="panel-header">
-              <span className="dot dot-blue" />
-              <span>Generated JavaScript</span>
-            </div>
-            <pre className="code-view">
-              {result.generatedCode.length > 0
-                ? result.generatedCode.join("\n")
-                : "// Run a mission to see your sentences become code."}
-            </pre>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <span className="dot dot-pink" />
-              <span>Robot Console</span>
-            </div>
-            <pre className="console-view">
-              {result.output.length > 0
-                ? result.output.join("\n")
-                : "Nothing printed yet."}
-            </pre>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <span className="dot dot-green" />
-              <span>World State</span>
-            </div>
-            <pre className="state-view">
-              {Object.keys(result.variables).length > 0
-                ? JSON.stringify(result.variables, null, 2)
-                : "{ }"}
-            </pre>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <span className="dot dot-yellow" />
-              <span>Debugger</span>
-            </div>
-            <div className="debug-list">
-              {result.errors.length > 0 ? (
-                result.errors.map((error) => (
-                  <p key={error} className="error-line">
-                    {error}
-                  </p>
-                ))
-              ) : result.steps.length > 0 ? (
-                result.steps.map((step) => <p key={step}>{step}</p>)
-              ) : (
-                <p>Friendly feedback appears here after you run the mission.</p>
-              )}
-            </div>
-          </div>
-        </aside>
       </section>
     </main>
   );
