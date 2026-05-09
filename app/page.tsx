@@ -14,13 +14,19 @@ const defaultResult: StoryResult = {
   errors: [],
 };
 
-const toolboxSnippets = [
-  "make a word called greeting with Hello sunny team!",
-  "make a list called nums with 2, 4, 6",
-  "make a number called target with 8",
+const languageGuide = [
+  "make a number called score with 10",
+  "make a list called nums with 2, 7, 11, 15",
+  "make a word called greeting with Hello team",
   "set total to sum of nums",
+  "set biggest to biggest number in nums",
+  "set pair to index pair from nums that adds to target",
+  "add 3 to score",
+  "push 9 into nums",
   "show total",
 ];
+
+type RunState = "idle" | "success" | "not-yet" | "error";
 
 export default function Home() {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -31,6 +37,8 @@ export default function Home() {
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [celebration, setCelebration] = useState("");
   const [showHint, setShowHint] = useState(false);
+  const [outputTab, setOutputTab] = useState<"console" | "javascript">("console");
+  const [runState, setRunState] = useState<RunState>("idle");
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
@@ -59,6 +67,7 @@ export default function Home() {
     setResult(defaultResult);
     setCelebration("");
     setShowHint(false);
+    setRunState("idle");
   }, [activeChallenge]);
 
   const progressPercent = Math.round(
@@ -72,17 +81,12 @@ export default function Home() {
     }));
   };
 
-  const insertSnippet = (snippet: string) => {
-    updateProgram(
-      program.trim().length === 0 ? snippet : `${program.trimEnd()}\n${snippet}`,
-    );
-  };
-
   const runProgram = () => {
     const nextResult = runStoryProgram(program);
     const passed = activeChallenge.check(nextResult);
 
     setResult(nextResult);
+    setOutputTab("console");
 
     if (passed) {
       setCompletedIds((current) => {
@@ -94,10 +98,12 @@ export default function Home() {
       });
 
       setCelebration(`Mission complete: ${activeChallenge.title}`);
+      setRunState("success");
       return;
     }
 
     setCelebration("");
+    setRunState(nextResult.errors.length > 0 ? "error" : "not-yet");
   };
 
   const canOpenChallenge = (index: number) =>
@@ -105,13 +111,33 @@ export default function Home() {
 
   const lineCount = program.trim().length === 0 ? 0 : program.split(/\r?\n/).length;
   const completedCount = completedIds.length;
+  const activeMissionComplete = completedIds.includes(activeChallenge.id);
+  const statusLabel =
+    runState === "success"
+      ? "Success"
+      : runState === "error"
+        ? "Fix errors"
+        : runState === "not-yet"
+          ? "Not solved yet"
+          : activeMissionComplete
+            ? "Mission cleared"
+            : "Ready";
+  const statusMessage =
+    runState === "success"
+      ? "This run solved the mission."
+      : runState === "error"
+        ? "The program ran into a sentence or type error."
+        : runState === "not-yet"
+          ? "Your program ran, but it did not meet the pass condition yet."
+          : activeMissionComplete
+            ? "This mission was already cleared before."
+            : "Write your sentences and press Run.";
 
   return (
     <main className="app-shell">
       <section className="ide-window">
         <header className="topbar">
           <div className="brand-block">
-            <div className="brand-mark">SC</div>
             <div>
               <p className="brand-kicker">Story Code Lab</p>
               <h1>Sentence Coding Studio</h1>
@@ -119,25 +145,9 @@ export default function Home() {
           </div>
 
           <div className="topbar-stats">
-            <div className="stat-pill">
-              <span>Mission</span>
-              <strong>
-                {activeIndex + 1}/{challenges.length}
-              </strong>
-            </div>
-            <div className="stat-pill">
-              <span>Cleared</span>
-              <strong>{completedCount}</strong>
-            </div>
-            <div className="stat-pill progress-pill">
-              <span>Progress</span>
-              <div className="progress-bar">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
+            <span>Mission {activeIndex + 1} of {challenges.length}</span>
+            <span>{completedCount} cleared</span>
+            <span>{progressPercent}% progress</span>
           </div>
         </header>
 
@@ -168,31 +178,24 @@ export default function Home() {
                       <span className="file-icon" />
                       <strong>{challenge.title}.story</strong>
                     </div>
-                    <span className="mission-badge">{challenge.badge}</span>
                     <span className="mission-status">
-                      {complete ? "Mission cleared" : unlocked ? "Open file" : "Locked"}
+                      {complete ? "done" : unlocked ? challenge.badge.toLowerCase() : "locked"}
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="toolbox-card">
-              <div className="section-label">Toolbox</div>
-              <p className="toolbox-copy">
-                Tap a phrase pattern to drop it into the editor without giving away the full answer.
-              </p>
-              <div className="toolbox-list">
-                {toolboxSnippets.map((snippet) => (
-                  <button
-                    key={snippet}
-                    className="toolbox-chip"
-                    onClick={() => insertSnippet(snippet)}
-                    type="button"
-                  >
-                    {snippet}
-                  </button>
-                ))}
+            <div className="sidebar-footer">
+              <div className="section-label">Progress</div>
+              <div className="sidebar-progress">
+                <div className="progress-bar">
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span>{completedCount} / {challenges.length} missions</span>
               </div>
             </div>
           </aside>
@@ -201,7 +204,7 @@ export default function Home() {
             <div className="editor-toolbar">
               <div className="tab-row">
                 <span className="file-tab active">{activeChallenge.title}.story</span>
-                <span className="file-tab muted">notes.md</span>
+                <span className="file-tab muted">console.txt</span>
               </div>
 
               <div className="action-row">
@@ -225,16 +228,10 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mission-banner">
-              <div>
-                <span className="story-badge">{activeChallenge.badge}</span>
-                <h2>{activeChallenge.title}</h2>
-                <p>{activeChallenge.story}</p>
-              </div>
-              <div className="mission-mini-card">
-                <span>Win target</span>
-                <strong>{activeChallenge.winText}</strong>
-              </div>
+            <div className="editor-info">
+              <span>{activeChallenge.badge}</span>
+              <span>{lineCount} lines</span>
+              <span>{statusLabel}</span>
             </div>
 
             <textarea
@@ -247,44 +244,73 @@ export default function Home() {
 
             <div className="editor-footer">
               <span>{lineCount} lines</span>
-              <span>{showHint ? activeChallenge.hint : "Hints stay hidden until you ask for one."}</span>
-              <span className="footer-status">
-                {celebration || (completedIds.includes(activeChallenge.id) ? "Mission cleared." : "Ready to run.")}
+              <span>{showHint ? activeChallenge.hint : "Hint is hidden."}</span>
+              <span className={`footer-status footer-status-${runState}`}>
+                {celebration || statusLabel}
               </span>
             </div>
           </section>
 
           <aside className="inspector-column">
             <div className="panel-surface info-card">
-              <div className="section-label">Mission Control</div>
-              <h3>{activeChallenge.mission}</h3>
+              <div className="section-label">Mission</div>
+              <div className={`run-status run-status-${runState}`}>
+                <strong>{statusLabel}</strong>
+                <span>{statusMessage}</span>
+              </div>
+              <h3>{activeChallenge.title}</h3>
+              <p className="mission-copy">{activeChallenge.story}</p>
               <div className="goal-box">
-                <strong>How to win</strong>
+                <strong>Goal</strong>
+                <p>{activeChallenge.mission}</p>
+              </div>
+              <div className="goal-box subtle-box">
+                <strong>Pass condition</strong>
                 <p>{activeChallenge.winText}</p>
               </div>
-              <div className="coach-box">
-                <strong>Coach note</strong>
-                <p>
-                  Think about the result first, then write the shortest set of sentences that gets your robot there.
-                </p>
+              {showHint ? (
+                <div className="goal-box hint-box">
+                  <strong>Hint</strong>
+                  <p>{activeChallenge.hint}</p>
+                </div>
+              ) : null}
+              <div className="goal-box guide-box">
+                <strong>Allowed sentence shapes</strong>
+                <div className="guide-list">
+                  {languageGuide.map((line) => (
+                    <code key={line} className="guide-line">
+                      {line}
+                    </code>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div className="panel-surface console-card">
-              <div className="section-label">Console</div>
-              <pre className="console-view">
-                {result.output.length > 0
-                  ? result.output.join("\n")
-                  : "Run your code to wake up the console."}
-              </pre>
             </div>
 
             <div className="panel-surface code-card">
-              <div className="section-label">Behind The Scenes</div>
+              <div className="output-tabs">
+                <button
+                  className={`output-tab ${outputTab === "console" ? "active" : ""}`}
+                  onClick={() => setOutputTab("console")}
+                  type="button"
+                >
+                  Console
+                </button>
+                <button
+                  className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
+                  onClick={() => setOutputTab("javascript")}
+                  type="button"
+                >
+                  JavaScript
+                </button>
+              </div>
               <pre className="code-view">
-                {result.generatedCode.length > 0
-                  ? result.generatedCode.join("\n")
-                  : "// Your translated JavaScript will appear here."}
+                {outputTab === "console"
+                  ? result.output.length > 0
+                    ? result.output.join("\n")
+                    : "Run your code to see output."
+                  : result.generatedCode.length > 0
+                    ? result.generatedCode.join("\n")
+                    : "// Translated JavaScript will appear here."}
               </pre>
               <div className="debug-list">
                 {result.errors.length > 0 ? (
@@ -296,7 +322,7 @@ export default function Home() {
                 ) : result.steps.length > 0 ? (
                   result.steps.map((step) => <p key={step}>{step}</p>)
                 ) : (
-                  <p>The coach feed will describe what happened after you run the mission.</p>
+                  <p>Status messages will appear here after you run the mission.</p>
                 )}
               </div>
             </div>
