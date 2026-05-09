@@ -90,12 +90,41 @@ textarea {
 .ide-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 320px;
+  grid-template-columns: 220px 6px minmax(0, 1fr) 6px 320px;
 }
 
 .panel-surface {
   min-height: 0;
   background: var(--panel);
+}
+
+.resize-handle {
+  position: relative;
+  background: var(--panel-muted);
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.resize-handle:hover::after {
+  background: rgba(0, 122, 204, 0.18);
+}
+
+.resize-handle-vertical {
+  cursor: col-resize;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.resize-handle-horizontal {
+  cursor: row-resize;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .sidebar {
@@ -319,7 +348,7 @@ textarea {
 
 .inspector-column {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto 6px minmax(0, 1fr);
   min-height: 0;
   border-left: 1px solid var(--border);
   background: var(--panel-muted);
@@ -507,6 +536,10 @@ textarea {
 
   .ide-grid {
     grid-template-columns: 1fr;
+  }
+
+  .resize-handle {
+    display: none;
   }
 
   .sidebar,

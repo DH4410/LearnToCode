@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { challenges } from "@/lib/challenges";
 import { runStoryProgram, type StoryResult } from "@/lib/story-runtime";
 
 const completionStorageKey = "story-code-lab-progress";
+const layoutStorageKey = "story-code-lab-layout";
 
 const defaultResult: StoryResult = {
   generatedCode: [],
@@ -28,6 +29,29 @@ const languageGuide = [
 
 type RunState = "idle" | "success" | "not-yet" | "error";
 
+type LayoutState = {
+  leftWidth: number;
+  rightWidth: number;
+  missionHeight: number;
+};
+
+type DragState =
+  | {
+      type: "left";
+      startX: number;
+      startWidth: number;
+    }
+  | {
+      type: "right";
+      startX: number;
+      startWidth: number;
+    }
+  | {
+      type: "mission";
+      startY: number;
+      startHeight: number;
+    };
+
 export default function Home() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
@@ -39,6 +63,13 @@ export default function Home() {
   const [showHint, setShowHint] = useState(false);
   const [outputTab, setOutputTab] = useState<"console" | "javascript">("console");
   const [runState, setRunState] = useState<RunState>("idle");
+  const [layout, setLayout] = useState<LayoutState>({
+    leftWidth: 220,
+    rightWidth: 320,
+    missionHeight: 330,
+  });
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [isCompactLayout, setIsCompactLayout] = useState(false);
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
@@ -57,6 +88,35 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const savedLayout = window.localStorage.getItem(layoutStorageKey);
+
+    if (savedLayout) {
+      try {
+        const parsed = JSON.parse(savedLayout) as Partial<LayoutState>;
+
+        setLayout((current) => ({
+          leftWidth: parsed.leftWidth ?? current.leftWidth,
+          rightWidth: parsed.rightWidth ?? current.rightWidth,
+          missionHeight: parsed.missionHeight ?? current.missionHeight,
+        }));
+      } catch {
+        window.localStorage.removeItem(layoutStorageKey);
+      }
+    }
+
+    const syncLayoutMode = () => {
+      setIsCompactLayout(window.innerWidth <= 1180);
+    };
+
+    syncLayoutMode();
+    window.addEventListener("resize", syncLayoutMode);
+
+    return () => {
+      window.removeEventListener("resize", syncLayoutMode);
+    };
+  }, []);
+
+  useEffect(() => {
     window.localStorage.setItem(
       completionStorageKey,
       JSON.stringify(completedIds),
@@ -64,11 +124,21 @@ export default function Home() {
   }, [completedIds]);
 
   useEffect(() => {
+    window.localStorage.setItem(layoutStorageKey, JSON.stringify(layout));
+  }, [layout]);
+
+  useEffect(() => {
     setResult(defaultResult);
     setCelebration("");
     setShowHint(false);
     setRunState("idle");
   }, [activeChallenge]);
+
+  useEffect(() => {
+    if (isCompactLayout) {
+      setDragState(null);
+    }
+  }, [isCompactLayout]);
 
   const progressPercent = Math.round(
     (completedIds.length / challenges.length) * 100,
@@ -133,6 +203,90 @@ export default function Home() {
             ? "This mission was already cleared before."
             : "Write your sentences and press Run.";
 
+  const clamp = (value: number, min: number, max: number) =>
+    Math.min(Math.max(value, min), max);
+
+  const handleDragMove = useEffectEvent((event: PointerEvent) => {
+    if (!dragState || isCompactLayout) {
+      return;
+    }
+
+    if (dragState.type === "left") {
+      const nextWidth = clamp(
+        dragState.startWidth + (event.clientX - dragState.startX),
+        180,
+        420,
+      );
+
+      setLayout((current) => ({
+        ...current,
+        leftWidth: nextWidth,
+      }));
+      return;
+    }
+
+    if (dragState.type === "right") {
+      const nextWidth = clamp(
+        dragState.startWidth - (event.clientX - dragState.startX),
+        260,
+        520,
+      );
+
+      setLayout((current) => ({
+        ...current,
+        rightWidth: nextWidth,
+      }));
+      return;
+    }
+
+    const maxMissionHeight = Math.max(220, window.innerHeight - 240);
+    const nextHeight = clamp(
+      dragState.startHeight + (event.clientY - dragState.startY),
+      200,
+      maxMissionHeight,
+    );
+
+    setLayout((current) => ({
+      ...current,
+      missionHeight: nextHeight,
+    }));
+  });
+
+  useEffect(() => {
+    if (!dragState) {
+      return;
+    }
+
+    const handlePointerUp = () => {
+      setDragState(null);
+    };
+
+    window.addEventListener("pointermove", handleDragMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor =
+      dragState.type === "mission" ? "row-resize" : "col-resize";
+
+    return () => {
+      window.removeEventListener("pointermove", handleDragMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [dragState, handleDragMove]);
+
+  const ideGridStyle = isCompactLayout
+    ? undefined
+    : {
+        gridTemplateColumns: `${layout.leftWidth}px 6px minmax(0, 1fr) 6px ${layout.rightWidth}px`,
+      };
+
+  const inspectorStyle = isCompactLayout
+    ? undefined
+    : {
+        gridTemplateRows: `${layout.missionHeight}px 6px minmax(0, 1fr)`,
+      };
+
   return (
     <main className="app-shell">
       <section className="ide-window">
@@ -151,7 +305,7 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="ide-grid">
+        <section className="ide-grid" style={ideGridStyle}>
           <aside className="sidebar panel-surface">
             <div className="section-label">Explorer</div>
 
@@ -199,6 +353,24 @@ export default function Home() {
               </div>
             </div>
           </aside>
+
+          <div
+            aria-label="Resize explorer"
+            className="resize-handle resize-handle-vertical"
+            onPointerDown={(event) => {
+              if (isCompactLayout) {
+                return;
+              }
+
+              event.preventDefault();
+              setDragState({
+                type: "left",
+                startX: event.clientX,
+                startWidth: layout.leftWidth,
+              });
+            }}
+            role="separator"
+          />
 
           <section className="editor-column panel-surface">
             <div className="editor-toolbar">
@@ -251,7 +423,25 @@ export default function Home() {
             </div>
           </section>
 
-          <aside className="inspector-column">
+          <div
+            aria-label="Resize side panel"
+            className="resize-handle resize-handle-vertical"
+            onPointerDown={(event) => {
+              if (isCompactLayout) {
+                return;
+              }
+
+              event.preventDefault();
+              setDragState({
+                type: "right",
+                startX: event.clientX,
+                startWidth: layout.rightWidth,
+              });
+            }}
+            role="separator"
+          />
+
+          <aside className="inspector-column" style={inspectorStyle}>
             <div className="panel-surface info-card">
               <div className="section-label">Mission</div>
               <div className={`run-status run-status-${runState}`}>
@@ -285,6 +475,24 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
+            <div
+              aria-label="Resize mission panel"
+              className="resize-handle resize-handle-horizontal"
+              onPointerDown={(event) => {
+                if (isCompactLayout) {
+                  return;
+                }
+
+                event.preventDefault();
+                setDragState({
+                  type: "mission",
+                  startY: event.clientY,
+                  startHeight: layout.missionHeight,
+                });
+              }}
+              role="separator"
+            />
 
             <div className="panel-surface code-card">
               <div className="output-tabs">
