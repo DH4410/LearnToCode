@@ -6,6 +6,7 @@ export type StoryResult = {
   variables: Record<string, StoryValue>;
   steps: string[];
   errors: string[];
+  lineCount: number;
 };
 
 const defineOrAssign = (
@@ -24,6 +25,57 @@ const isQuoted = (value: string) =>
   (value.startsWith("'") && value.endsWith("'"));
 
 const stripQuotes = (value: string) => value.slice(1, -1);
+
+const splitTopLevel = (source: string): string[] => {
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+
+  for (const char of source) {
+    if (quote) {
+      current += char;
+
+      if (char === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === "[") {
+      depth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === "]") {
+      depth = Math.max(0, depth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === "," && depth === 0) {
+      parts.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim().length > 0) {
+    parts.push(current.trim());
+  }
+
+  return parts;
+};
 
 const formatJsValue = (value: StoryValue): string => {
   if (Array.isArray(value)) {
@@ -48,7 +100,7 @@ const formatOutputValue = (value: StoryValue): string => {
 const parseList = (source: string): StoryValue[] => {
   const cleaned = source.replace(/\band\b/gi, ",");
   const parts = cleaned.includes(",")
-    ? cleaned.split(",")
+    ? splitTopLevel(cleaned)
     : cleaned.split(/\s+/);
 
   return parts
@@ -59,6 +111,16 @@ const parseList = (source: string): StoryValue[] => {
 
 const parseLiteral = (source: string): StoryValue => {
   const trimmed = source.trim();
+
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    const inner = trimmed.slice(1, -1).trim();
+
+    if (inner.length === 0) {
+      return [];
+    }
+
+    return splitTopLevel(inner).map((part) => parseLiteral(part));
+  }
 
   if (isQuoted(trimmed)) {
     return stripQuotes(trimmed);
@@ -88,7 +150,45 @@ const getList = (value: StoryValue, label: string): StoryValue[] => {
     return value;
   }
 
-  throw new Error(`${label} should be a list.`);
+      throw new Error(`${label} should be a list.`);
+};
+
+const parseValueByKind = (
+  kind: string,
+  rawValue: string,
+  variableName: string,
+): StoryValue => {
+  if (kind === "list" || kind === "array") {
+    if (rawValue.trim().startsWith("[") && rawValue.trim().endsWith("]")) {
+      const parsed = parseLiteral(rawValue);
+
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+
+    return parseList(rawValue);
+  }
+
+  if (kind === "number") {
+    return getNumber(parseLiteral(rawValue), variableName);
+  }
+
+  if (kind === "boolean" || kind === "flag") {
+    const parsed = parseLiteral(rawValue);
+
+    if (typeof parsed !== "boolean") {
+      throw new Error(`${variableName} should be true or false.`);
+    }
+
+    return parsed;
+  }
+
+  if (kind === "word" || kind === "text" || kind === "string") {
+    return isQuoted(rawValue) ? stripQuotes(rawValue) : rawValue;
+  }
+
+  return evaluateExpression(rawValue, {});
 };
 
 const resolveToken = (
@@ -259,7 +359,7 @@ export const runStoryProgram = (source: string): StoryResult => {
     .filter((line) => line.length > 0);
 
   lines.forEach((line, index) => {
-    const cleanedLine = line.replace(/[.]+$/, "");
+    const cleanedLine = line.replace(/[.;]+$/, "");
     let match: RegExpMatchArray | null;
 
     try {
@@ -271,28 +371,42 @@ export const runStoryProgram = (source: string): StoryResult => {
         const variableName = normalizeName(match[2]);
         const rawValue = match[3].trim();
 
-        let value: StoryValue;
-
-        if (kind === "list") {
-          value = parseList(rawValue);
-        } else if (kind === "number") {
-          value = getNumber(parseLiteral(rawValue), variableName);
-        } else if (kind === "boolean" || kind === "flag") {
-          const parsed = parseLiteral(rawValue);
-
-          if (typeof parsed !== "boolean") {
-            throw new Error(`${variableName} should be true or false.`);
-          }
-
-          value = parsed;
-        } else {
-          value = isQuoted(rawValue) ? stripQuotes(rawValue) : rawValue;
-        }
+        const value = parseValueByKind(kind, rawValue, variableName);
 
         const jsLine = defineOrAssign(variables, variableName, value);
         variables[variableName] = value;
         generatedCode.push(jsLine);
         steps.push(`Created ${variableName}.`);
+        return;
+      }
+
+      match = cleanedLine.match(
+        /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*=\s*(.+)$/i,
+      );
+      if (match) {
+        const variableName = normalizeName(match[2]);
+        const value = evaluateExpression(match[3].trim(), variables);
+        const declarationKeyword = match[1].toLowerCase() === "const" ? "const" : "let";
+        const jsLine =
+          variableName in variables
+            ? `${variableName} = ${formatJsValue(value)};`
+            : `${declarationKeyword} ${variableName} = ${formatJsValue(value)};`;
+
+        variables[variableName] = value;
+        generatedCode.push(jsLine);
+        steps.push(`Created ${variableName}.`);
+        return;
+      }
+
+      match = cleanedLine.match(/^([a-zA-Z][\w]*)\s*=\s*(.+)$/);
+      if (match) {
+        const variableName = normalizeName(match[1]);
+        const value = evaluateExpression(match[2].trim(), variables);
+        const jsLine = defineOrAssign(variables, variableName, value);
+
+        variables[variableName] = value;
+        generatedCode.push(jsLine);
+        steps.push(`Updated ${variableName}.`);
         return;
       }
 
@@ -334,9 +448,9 @@ export const runStoryProgram = (source: string): StoryResult => {
         return;
       }
 
-      match = cleanedLine.match(/^show (.+)$/i);
+      match = cleanedLine.match(/^(show|print)\s+(.+)$/i);
       if (match) {
-        const value = evaluateExpression(match[1], variables);
+        const value = evaluateExpression(match[2], variables);
 
         output.push(formatOutputValue(value));
         generatedCode.push(`console.log(${formatJsValue(value)});`);
@@ -345,7 +459,7 @@ export const runStoryProgram = (source: string): StoryResult => {
       }
 
       throw new Error(
-        "I do not understand that sentence yet. Try commands like 'make', 'set', 'add', 'push', or 'show'.",
+        "I do not understand that line yet. Use one action per line with commands like 'make', 'variable', 'set', 'add', 'push', 'show', or 'print'.",
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error.";
@@ -359,5 +473,6 @@ export const runStoryProgram = (source: string): StoryResult => {
     variables,
     steps,
     errors,
+    lineCount: lines.length,
   };
 };

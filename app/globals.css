@@ -448,6 +448,13 @@ textarea {
   margin-top: 10px;
 }
 
+.guide-copy {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .guide-list {
   display: grid;
   gap: 6px;

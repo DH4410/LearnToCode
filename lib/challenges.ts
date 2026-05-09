@@ -22,6 +22,15 @@ const outputHas = (result: StoryResult, text: string) =>
   result.errors.length === 0 &&
   result.output.some((line) => line.trim().toLowerCase() === text.toLowerCase());
 
+const hasListValue = (result: StoryResult, target: number[]) =>
+  Object.values(result.variables).some((value) => sameArray(value, target));
+
+const hasAnyList = (result: StoryResult) =>
+  Object.values(result.variables).some((value) => Array.isArray(value));
+
+const hasNumberValue = (result: StoryResult, target: number) =>
+  Object.values(result.variables).some((value) => value === target);
+
 export const challenges: Challenge[] = [
   {
     id: "echo-canyon",
@@ -35,8 +44,12 @@ export const challenges: Challenge[] = [
     hint: "Create a word, then show it. Example idea: make a word called greeting with Hello bright canyon!",
     starter: "",
     placeholder:
-      "Type your own sentences here.\n\nIdeas:\nmake a word called greeting with Hello bright canyon!\nshow greeting",
-    check: (result) => result.errors.length === 0 && result.output.length > 0,
+      "One action per line.\n\nIdeas:\nvariable text = \"Hello bright canyon!\"\nshow text",
+    check: (result) =>
+      result.errors.length === 0 &&
+      result.lineCount >= 2 &&
+      Object.keys(result.variables).length >= 1 &&
+      result.output.length > 0,
   },
   {
     id: "snack-counter",
@@ -50,8 +63,11 @@ export const challenges: Challenge[] = [
     hint: "Make a list first. Then create a new value from the sum of that list and show it.",
     starter: "",
     placeholder:
-      "Count the apples without blocks.\n\nYou need the numbers 3, 5, 2, 4.\nMake a list, find the sum, then show the answer.",
-    check: (result) => outputHas(result, "14"),
+      "One action per line.\n\nExample styles:\nmake a list called apples with 3, 5, 2, 4\nset total to sum of apples\nshow total",
+    check: (result) =>
+      result.lineCount >= 3 &&
+      hasListValue(result, [3, 5, 2, 4]) &&
+      outputHas(result, "14"),
   },
   {
     id: "mountain-watch",
@@ -65,8 +81,11 @@ export const challenges: Challenge[] = [
     hint: "There is a built-in phrase for this: biggest number in your list.",
     starter: "",
     placeholder:
-      "Find the tallest mountain.\n\nUse the heights 4, 12, 7, 18, 9.\nPrint only the biggest one.",
-    check: (result) => outputHas(result, "18"),
+      "One action per line.\n\nUse the heights 4, 12, 7, 18, 9.\nMake a list, find the biggest number, then show it.",
+    check: (result) =>
+      result.lineCount >= 3 &&
+      hasListValue(result, [4, 12, 7, 18, 9]) &&
+      outputHas(result, "18"),
   },
   {
     id: "two-sum-quest",
@@ -80,9 +99,12 @@ export const challenges: Challenge[] = [
     hint: "After making the list and target, ask for the index pair from your list that adds to the target.",
     starter: "",
     placeholder:
-      "Beat the final gate.\n\nYou need the list 2, 7, 11, 15 and target 9.\nFind the matching index pair and show it.",
+      "One action per line.\n\nExample styles:\nlet nums = [2, 7, 11, 15]\nlet target = 9\npair = index pair from nums that adds to target\nshow pair",
     check: (result) =>
+      result.lineCount >= 4 &&
       result.errors.length === 0 &&
+      hasListValue(result, [2, 7, 11, 15]) &&
+      hasNumberValue(result, 9) &&
       (sameArray(result.variables.pair, [0, 1]) ||
         result.output.includes("[0, 1]")),
   },

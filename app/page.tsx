@@ -13,18 +13,24 @@ const defaultResult: StoryResult = {
   variables: {},
   steps: [],
   errors: [],
+  lineCount: 0,
 };
 
 const languageGuide = [
   "make a number called score with 10",
+  "variable text = \"hi\"",
+  "let nums = [2, 7, 11, 15]",
+  "const target = 9",
   "make a list called nums with 2, 7, 11, 15",
   "make a word called greeting with Hello team",
   "set total to sum of nums",
   "set biggest to biggest number in nums",
   "set pair to index pair from nums that adds to target",
+  "answer = sum of nums",
   "add 3 to score",
   "push 9 into nums",
   "show total",
+  "print text",
 ];
 
 type RunState = "idle" | "success" | "not-yet" | "error";
@@ -465,7 +471,10 @@ export default function Home() {
                 </div>
               ) : null}
               <div className="goal-box guide-box">
-                <strong>Allowed sentence shapes</strong>
+                <strong>Allowed commands</strong>
+                <p className="guide-copy">
+                  Use one action per line. You can mix sentence-style commands and simple variable-style lines.
+                </p>
                 <div className="guide-list">
                   {languageGuide.map((line) => (
                     <code key={line} className="guide-line">
