@@ -15,17 +15,45 @@ const defaultResult: StoryResult = {
   steps: [],
   errors: [],
   lineCount: 0,
+  source: "",
 };
 
-const languageGuide = [
-  'say "Hello!"',
-  "repeat 3 times\n  say \"beep\"",
-  "make a number called score with 10",
-  "change score by 1",
-  'make a list called backpack with "map", "snack", "rope"',
-  'add "flashlight" to backpack',
-  "set total to sum of nums",
-  "set tallest to biggest number in heights",
+type CommandSection = {
+  title: string;
+  lines: string[];
+};
+
+const commandLibrary: CommandSection[] = [
+  {
+    title: "Talking",
+    lines: ['say "Hello!"', "show total", 'print("Ready")'],
+  },
+  {
+    title: "Numbers",
+    lines: [
+      "make a number called score with 10",
+      "set total to 0",
+      "change total by 1",
+      "show score + 2",
+    ],
+  },
+  {
+    title: "Lists",
+    lines: [
+      'create list backpack',
+      'make a list called snacks with "apple", "pear", "toast"',
+      'add "water" to backpack',
+      "show item 2 of snacks",
+      'insert "Kai" at 2 of guests',
+      'replace item 4 of guests with "Zoe"',
+      "delete item 1 of guests",
+      'show backpack contains "map"',
+    ],
+  },
+  {
+    title: "Loops",
+    lines: ['repeat 3 times\n  say "beep"', "repeat total times\n  change score by 1"],
+  },
 ];
 
 type EditorIssue = {
@@ -35,59 +63,50 @@ type EditorIssue = {
 };
 
 type AutocompleteSnippet = {
-  description: string;
   label: string;
   snippet: string;
   trigger: string;
 };
 
 const autocompleteSnippets: AutocompleteSnippet[] = [
-  {
-    trigger: "say",
-    label: 'say "..."',
-    snippet: 'say "<>"',
-    description: "Make the screen say something.",
-  },
-  {
-    trigger: "repeat",
-    label: "repeat block",
-    snippet: 'repeat <>3 times\n  say "beep"',
-    description: "Create a simple repeat block.",
-  },
+  { trigger: "say", label: 'say "..."', snippet: 'say "<>"' },
+  { trigger: "show", label: "show value", snippet: "show <>total" },
+  { trigger: "repeat", label: "repeat block", snippet: 'repeat <>3 times\n  say "beep"' },
+  { trigger: "create list", label: "create list", snippet: "create list <>items" },
   {
     trigger: "make a list",
     label: "make list",
     snippet: 'make a list called <>items with "map", "snack", "rope"',
-    description: "Create a list with several items.",
   },
   {
     trigger: "make a number",
     label: "make number",
     snippet: "make a number called <>score with 10",
-    description: "Create a number variable.",
+  },
+  { trigger: "set", label: "set value", snippet: "set <>total to sum of nums" },
+  { trigger: "change", label: "change number", snippet: "change <>score by 1" },
+  { trigger: "add", label: "add item", snippet: 'add <>"flashlight" to backpack' },
+  { trigger: "insert", label: "insert item", snippet: 'insert <>"Kai" at 2 of guests' },
+  {
+    trigger: "replace item",
+    label: "replace item",
+    snippet: 'replace item <>2 of guests with "Zoe"',
   },
   {
-    trigger: "set",
-    label: "set variable",
-    snippet: "set <>total to sum of nums",
-    description: "Set a variable to a new value.",
+    trigger: "delete item",
+    label: "delete item",
+    snippet: "delete item <>1 of guests",
   },
   {
-    trigger: "change",
-    label: "change number",
-    snippet: "change <>score by 1",
-    description: "Increase or decrease a number.",
-  },
-  {
-    trigger: "add",
-    label: "add to list",
-    snippet: 'add <>"flashlight" to backpack',
-    description: "Add an item to a list.",
+    trigger: "show item",
+    label: "show item",
+    snippet: "show item <>2 of snacks",
   },
 ];
 
 const commandKeywords = new Set([
   "make",
+  "create",
   "variable",
   "let",
   "const",
@@ -96,6 +115,9 @@ const commandKeywords = new Set([
   "add",
   "push",
   "append",
+  "insert",
+  "replace",
+  "delete",
   "change",
   "repeat",
   "show",
@@ -139,6 +161,7 @@ const expressionKeywords = new Set([
   "times",
   "divided",
   "by",
+  "contains",
   "true",
   "false",
   "and",
@@ -327,7 +350,10 @@ const lintProgram = (program: string): EditorIssue[] => {
       return;
     }
 
-    while (blockStack.length > 0 && indent <= blockStack[blockStack.length - 1]) {
+    while (
+      blockStack.length > 0 &&
+      indent <= blockStack[blockStack.length - 1]
+    ) {
       blockStack.pop();
     }
 
@@ -380,6 +406,14 @@ const lintProgram = (program: string): EditorIssue[] => {
       }
     }
 
+    if (lowerFirst === "create" && !/^create list [a-zA-Z][\w\s]*$/i.test(trimmed)) {
+      issues.push({
+        line: index + 1,
+        token: "create",
+        message: "Expected: create list <name>",
+      });
+    }
+
     if (lowerFirst === "repeat") {
       if (!/^repeat .+ times(\s*:\s*.+)?\s*$/i.test(trimmed)) {
         issues.push({
@@ -400,6 +434,33 @@ const lintProgram = (program: string): EditorIssue[] => {
         line: index + 1,
         token: firstToken,
         message: "Expected a value after say/show/print.",
+      });
+    }
+
+    if (lowerFirst === "insert" && !/^insert .+ at .+ of [a-zA-Z][\w\s]*$/i.test(trimmed)) {
+      issues.push({
+        line: index + 1,
+        token: "insert",
+        message: "Expected: insert <item> at <number> of <list>",
+      });
+    }
+
+    if (
+      lowerFirst === "replace" &&
+      !/^replace item .+ of [a-zA-Z][\w\s]* with .+$/i.test(trimmed)
+    ) {
+      issues.push({
+        line: index + 1,
+        token: "replace",
+        message: "Expected: replace item <number> of <list> with <item>",
+      });
+    }
+
+    if (lowerFirst === "delete" && !/^delete item .+ of [a-zA-Z][\w\s]*$/i.test(trimmed)) {
+      issues.push({
+        line: index + 1,
+        token: "delete",
+        message: "Expected: delete item <number> of <list>",
       });
     }
 
@@ -491,7 +552,10 @@ const lintProgram = (program: string): EditorIssue[] => {
       });
     }
 
-    if (lowerFirst === "set" && !/^set [a-zA-Z][\w\s]* (?:to|=) .+$/i.test(trimmed)) {
+    if (
+      lowerFirst === "set" &&
+      !/^set [a-zA-Z][\w\s]* (?:to|=) .+$/i.test(trimmed)
+    ) {
       issues.push({
         line: index + 1,
         token: firstToken,
@@ -499,7 +563,10 @@ const lintProgram = (program: string): EditorIssue[] => {
       });
     }
 
-    if (lowerFirst === "change" && !/^change [a-zA-Z][\w\s]* by .+$/i.test(trimmed)) {
+    if (
+      lowerFirst === "change" &&
+      !/^change [a-zA-Z][\w\s]* by .+$/i.test(trimmed)
+    ) {
       issues.push({
         line: index + 1,
         token: firstToken,
@@ -569,29 +636,39 @@ const colorizeLine = (
 };
 
 type RunState = "idle" | "success" | "not-yet" | "error";
+type InspectorTab = "mission" | "commands";
+type PanelId = "console" | "problems";
+type PanelDock = "bottom" | "floating";
 
 type LayoutState = {
+  bottomHeight: number;
   leftWidth: number;
   rightWidth: number;
-  missionHeight: number;
 };
 
 type DragState =
-  | {
-      type: "left";
-      startX: number;
-      startWidth: number;
-    }
-  | {
-      type: "right";
-      startX: number;
-      startWidth: number;
-    }
-  | {
-      type: "mission";
-      startY: number;
-      startHeight: number;
-    };
+  | { type: "left"; startX: number; startWidth: number }
+  | { type: "right"; startX: number; startWidth: number }
+  | { type: "bottom"; startY: number; startHeight: number };
+
+type DockPanelState = {
+  dock: PanelDock;
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
+
+type FloatingDragState = {
+  offsetX: number;
+  offsetY: number;
+  panelId: PanelId;
+};
+
+const panelTitles: Record<PanelId, string> = {
+  console: "Terminal",
+  problems: "Problems",
+};
 
 export default function Home() {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -604,22 +681,30 @@ export default function Home() {
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [celebration, setCelebration] = useState("");
   const [showHint, setShowHint] = useState(false);
-  const [outputTab, setOutputTab] = useState<
-    "terminal" | "javascript" | "problems"
-  >("terminal");
   const [runState, setRunState] = useState<RunState>("idle");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("mission");
   const [layout, setLayout] = useState<LayoutState>({
     leftWidth: 220,
     rightWidth: 320,
-    missionHeight: 330,
+    bottomHeight: 230,
   });
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const editorBackdropRef = useRef<HTMLPreElement | null>(null);
   const editorGutterRef = useRef<HTMLDivElement | null>(null);
   const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const [scratchAssistEnabled, setScratchAssistEnabled] = useState(true);
+  const [assistEnabled, setAssistEnabled] = useState(true);
   const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0 });
+  const [successFlash, setSuccessFlash] = useState(false);
+  const [showAllProblems, setShowAllProblems] = useState(false);
+  const bottomDockRef = useRef<HTMLDivElement | null>(null);
+  const consolePanelRef = useRef<HTMLDivElement | null>(null);
+  const problemsPanelRef = useRef<HTMLDivElement | null>(null);
+  const [floatingDrag, setFloatingDrag] = useState<FloatingDragState | null>(null);
+  const [panels, setPanels] = useState<Record<PanelId, DockPanelState>>({
+    console: { dock: "bottom", height: 220, width: 460, x: 220, y: 140 },
+    problems: { dock: "bottom", height: 240, width: 460, x: 300, y: 180 },
+  });
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
@@ -627,10 +712,14 @@ export default function Home() {
   const programLines = useMemo(() => program.split(/\r?\n/), [program]);
   const autocompletePreview = useMemo(
     () =>
-      scratchAssistEnabled
-        ? getAutocompletePreview(program, editorSelection.start, editorSelection.end)
+      assistEnabled
+        ? getAutocompletePreview(
+            program,
+            editorSelection.start,
+            editorSelection.end,
+          )
         : null,
-    [editorSelection.end, editorSelection.start, program, scratchAssistEnabled],
+    [assistEnabled, editorSelection.end, editorSelection.start, program],
   );
 
   const highlightedProgram = useMemo(() => {
@@ -674,7 +763,7 @@ export default function Home() {
     const savedAssistMode = window.localStorage.getItem(assistStorageKey);
 
     if (savedAssistMode) {
-      setScratchAssistEnabled(savedAssistMode === "on");
+      setAssistEnabled(savedAssistMode === "on");
     }
   }, []);
 
@@ -686,9 +775,9 @@ export default function Home() {
         const parsed = JSON.parse(savedLayout) as Partial<LayoutState>;
 
         setLayout((current) => ({
+          bottomHeight: parsed.bottomHeight ?? current.bottomHeight,
           leftWidth: parsed.leftWidth ?? current.leftWidth,
           rightWidth: parsed.rightWidth ?? current.rightWidth,
-          missionHeight: parsed.missionHeight ?? current.missionHeight,
         }));
       } catch {
         window.localStorage.removeItem(layoutStorageKey);
@@ -719,23 +808,38 @@ export default function Home() {
   }, [layout]);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      assistStorageKey,
-      scratchAssistEnabled ? "on" : "off",
-    );
-  }, [scratchAssistEnabled]);
+    window.localStorage.setItem(assistStorageKey, assistEnabled ? "on" : "off");
+  }, [assistEnabled]);
 
   useEffect(() => {
     setResult(defaultResult);
     setCelebration("");
     setShowHint(false);
     setRunState("idle");
+    setShowAllProblems(false);
     setEditorSelection({ start: 0, end: 0 });
   }, [activeChallenge]);
 
   useEffect(() => {
+    if (!successFlash) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSuccessFlash(false);
+    }, 1400);
+
+    return () => window.clearTimeout(timeout);
+  }, [successFlash]);
+
+  useEffect(() => {
     if (isCompactLayout) {
       setDragState(null);
+      setFloatingDrag(null);
+      setPanels((current) => ({
+        console: { ...current.console, dock: "bottom" },
+        problems: { ...current.problems, dock: "bottom" },
+      }));
     }
   }, [isCompactLayout]);
 
@@ -752,8 +856,8 @@ export default function Home() {
 
   const syncEditorSelection = (target: HTMLTextAreaElement) => {
     setEditorSelection({
-      start: target.selectionStart,
       end: target.selectionEnd,
+      start: target.selectionStart,
     });
   };
 
@@ -796,7 +900,7 @@ export default function Home() {
     if (event.key === "Tab") {
       event.preventDefault();
 
-      if (scratchAssistEnabled) {
+      if (assistEnabled) {
         const completion = applyAutocomplete(
           program,
           target.selectionStart,
@@ -837,7 +941,7 @@ export default function Home() {
     const passed = activeChallenge.check(nextResult);
 
     setResult(nextResult);
-    setOutputTab("terminal");
+    setShowAllProblems(false);
 
     if (passed) {
       setCompletedIds((current) => {
@@ -850,6 +954,7 @@ export default function Home() {
 
       setCelebration(`Mission complete: ${activeChallenge.title}`);
       setRunState("success");
+      setSuccessFlash(true);
       return;
     }
 
@@ -876,13 +981,13 @@ export default function Home() {
             : "Ready";
   const statusMessage =
     runState === "success"
-      ? "This run solved the mission."
+      ? "That run solved the mission."
       : runState === "error"
-        ? "The code hit a real problem. Check the line notes and try again."
+        ? "The code hit a real problem. Read the Problems panel and try again."
         : runState === "not-yet"
-          ? "Your code ran, but it has not finished the mission yet."
+          ? "The code ran, but it did not satisfy the mission yet."
           : activeMissionComplete
-            ? "This mission was already cleared before."
+            ? "This mission was already cleared."
             : "Write your code, then press Run.";
 
   const runtimeProblems = result.errors.map((error, index) => ({
@@ -898,6 +1003,11 @@ export default function Home() {
   }));
 
   const allProblems = [...lintProblems, ...runtimeProblems];
+  const visibleProblems = showAllProblems ? allProblems : allProblems.slice(0, 8);
+  const hiddenProblems = Math.max(0, allProblems.length - visibleProblems.length);
+  const terminalLines =
+    result.output.length > 14 ? result.output.slice(-14) : result.output;
+  const hiddenTerminalLines = Math.max(0, result.output.length - terminalLines.length);
 
   const clamp = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
@@ -911,7 +1021,7 @@ export default function Home() {
       const nextWidth = clamp(
         dragState.startWidth + (event.clientX - dragState.startX),
         180,
-        420,
+        380,
       );
 
       setLayout((current) => ({
@@ -924,8 +1034,8 @@ export default function Home() {
     if (dragState.type === "right") {
       const nextWidth = clamp(
         dragState.startWidth - (event.clientX - dragState.startX),
-        260,
-        520,
+        280,
+        430,
       );
 
       setLayout((current) => ({
@@ -935,16 +1045,15 @@ export default function Home() {
       return;
     }
 
-    const maxMissionHeight = Math.max(220, window.innerHeight - 240);
     const nextHeight = clamp(
-      dragState.startHeight + (event.clientY - dragState.startY),
-      200,
-      maxMissionHeight,
+      dragState.startHeight - (event.clientY - dragState.startY),
+      170,
+      360,
     );
 
     setLayout((current) => ({
       ...current,
-      missionHeight: nextHeight,
+      bottomHeight: nextHeight,
     }));
   });
 
@@ -961,7 +1070,7 @@ export default function Home() {
     window.addEventListener("pointerup", handlePointerUp);
     document.body.style.userSelect = "none";
     document.body.style.cursor =
-      dragState.type === "mission" ? "row-resize" : "col-resize";
+      dragState.type === "bottom" ? "row-resize" : "col-resize";
 
     return () => {
       window.removeEventListener("pointermove", handleDragMove);
@@ -971,16 +1080,125 @@ export default function Home() {
     };
   }, [dragState, handleDragMove]);
 
+  const handleFloatingMove = useEffectEvent((event: PointerEvent) => {
+    if (!floatingDrag) {
+      return;
+    }
+
+    const nextX = clamp(
+      event.clientX - floatingDrag.offsetX,
+      24,
+      window.innerWidth - 220,
+    );
+    const nextY = clamp(
+      event.clientY - floatingDrag.offsetY,
+      56,
+      window.innerHeight - 120,
+    );
+
+    setPanels((current) => ({
+      ...current,
+      [floatingDrag.panelId]: {
+        ...current[floatingDrag.panelId],
+        dock: "floating",
+        x: nextX,
+        y: nextY,
+      },
+    }));
+  });
+
+  useEffect(() => {
+    if (!floatingDrag) {
+      return;
+    }
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const dockRect = bottomDockRef.current?.getBoundingClientRect();
+
+      if (
+        dockRect &&
+        event.clientX >= dockRect.left &&
+        event.clientX <= dockRect.right &&
+        event.clientY >= dockRect.top - 32 &&
+        event.clientY <= dockRect.bottom + 32
+      ) {
+        setPanels((current) => ({
+          ...current,
+          [floatingDrag.panelId]: {
+            ...current[floatingDrag.panelId],
+            dock: "bottom",
+          },
+        }));
+      }
+
+      setFloatingDrag(null);
+    };
+
+    window.addEventListener("pointermove", handleFloatingMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "move";
+
+    return () => {
+      window.removeEventListener("pointermove", handleFloatingMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [floatingDrag, handleFloatingMove]);
+
+  const startPanelDrag = (
+    panelId: PanelId,
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (isCompactLayout) {
+      return;
+    }
+
+    const panelRef =
+      panelId === "console" ? consolePanelRef.current : problemsPanelRef.current;
+
+    if (!panelRef) {
+      return;
+    }
+
+    const rect = panelRef.getBoundingClientRect();
+
+    setPanels((current) => ({
+      ...current,
+      [panelId]: {
+        ...current[panelId],
+        dock: "floating",
+        height: rect.height,
+        width: rect.width,
+        x: rect.left,
+        y: rect.top,
+      },
+    }));
+    setFloatingDrag({
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      panelId,
+    });
+  };
+
+  const dockBottomPanels = (Object.keys(panels) as PanelId[]).filter(
+    (panelId) => panels[panelId].dock === "bottom",
+  );
+  const floatingPanels = (Object.keys(panels) as PanelId[]).filter(
+    (panelId) => panels[panelId].dock === "floating",
+  );
+
   const ideGridStyle = isCompactLayout
     ? undefined
     : {
         gridTemplateColumns: `${layout.leftWidth}px 6px minmax(0, 1fr) 6px ${layout.rightWidth}px`,
       };
 
-  const inspectorStyle = isCompactLayout
+  const workbenchStyle = isCompactLayout
     ? undefined
     : {
-        gridTemplateRows: `${layout.missionHeight}px 6px minmax(0, 1fr)`,
+        gridTemplateRows: `minmax(0, 1fr) 6px ${layout.bottomHeight}px`,
       };
 
   const syncEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
@@ -995,6 +1213,108 @@ export default function Home() {
     if (editorGutterRef.current) {
       editorGutterRef.current.scrollTop = nextTop;
     }
+  };
+
+  const renderPanel = (panelId: PanelId, floating = false) => {
+    const panelRef = panelId === "console" ? consolePanelRef : problemsPanelRef;
+    const panelState = panels[panelId];
+
+    return (
+      <div
+        className={`dock-panel ${floating ? "dock-panel-floating" : ""}`}
+        key={panelId}
+        ref={panelRef}
+        style={
+          floating
+            ? {
+                height: panelState.height,
+                left: panelState.x,
+                top: panelState.y,
+                width: panelState.width,
+              }
+            : undefined
+        }
+      >
+        <div
+          className="dock-panel-header"
+          onPointerDown={(event) => startPanelDrag(panelId, event)}
+        >
+          <div>
+            <strong>{panelTitles[panelId]}</strong>
+            <span>{floating ? "Floating panel" : "Drag to undock"}</span>
+          </div>
+          <div className="dock-panel-actions">
+            {floating ? (
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setPanels((current) => ({
+                    ...current,
+                    [panelId]: { ...current[panelId], dock: "bottom" },
+                  }))
+                }
+                type="button"
+              >
+                Dock Bottom
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {panelId === "console" ? (
+          <div className="dock-panel-body">
+            {hiddenTerminalLines > 0 ? (
+              <p className="panel-note">
+                Showing the latest {terminalLines.length} lines. {hiddenTerminalLines} earlier
+                line{hiddenTerminalLines > 1 ? "s were" : " was"} hidden.
+              </p>
+            ) : null}
+            <pre className="code-view dock-code-view">
+              {terminalLines.length > 0
+                ? [`$ run ${activeChallenge.title}.story`, ...terminalLines].join("\n")
+                : "$ Run your code to see output."}
+            </pre>
+          </div>
+        ) : (
+          <div className="dock-panel-body">
+            {visibleProblems.length > 0 ? (
+              <>
+                <div className="problem-summary">
+                  <strong>{allProblems.length} problem{allProblems.length > 1 ? "s" : ""}</strong>
+                  {hiddenProblems > 0 ? (
+                    <button
+                      className="secondary-button"
+                      onClick={() => setShowAllProblems((current) => !current)}
+                      type="button"
+                    >
+                      {showAllProblems ? "Show fewer" : `Show ${hiddenProblems} more`}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="problem-list">
+                  {visibleProblems.map((problem) => (
+                    <p key={problem.id} className="error-line">
+                      {problem.line ? `Line ${problem.line}: ` : ""}
+                      {problem.message}
+                    </p>
+                  ))}
+                </div>
+              </>
+            ) : result.steps.length > 0 ? (
+              <div className="problem-list">
+                {result.steps.slice(-6).map((step) => (
+                  <p key={step}>{step}</p>
+                ))}
+              </div>
+            ) : (
+              <p className="panel-note">
+                Problems will appear here. Clean runs leave this panel quiet.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -1022,66 +1342,53 @@ export default function Home() {
             <div className="section-label">Explorer</div>
 
             <div className="mission-list">
-              {(() => {
-                const map = new Map<string, typeof challenges>();
+              {challenges.map((challenge, index) => {
+                const unlocked = canOpenChallenge(index);
+                const complete = completedIds.includes(challenge.id);
+                const previousCategory =
+                  index === 0 ? null : challenges[index - 1].category;
+                const showCategory = challenge.category !== previousCategory;
 
-                challenges.forEach((challenge) => {
-                  const key = challenge.category ?? "General";
-
-                  if (!map.has(key)) {
-                    map.set(key, [] as typeof challenges);
-                  }
-
-                  map.get(key)!.push(challenge);
-                });
-
-                return Array.from(map.entries()).map(([category, items]) => (
-                  <div key={category}>
-                    <div className="section-label section-label-category">
-                      {category}
-                    </div>
-                    {items.map((challenge) => {
-                      const index = challenges.findIndex(
-                        (entry) => entry.id === challenge.id,
-                      );
-                      const unlocked = canOpenChallenge(index);
-                      const complete = completedIds.includes(challenge.id);
-
-                      return (
-                        <button
-                          key={challenge.id}
-                          className={`mission-card ${
-                            index === activeIndex ? "active" : ""
-                          } ${complete ? "complete" : ""}`}
-                          disabled={!unlocked}
-                          onClick={() => {
-                            if (unlocked) {
-                              setActiveIndex(index);
-                            }
-                          }}
-                          type="button"
-                        >
-                          <div className="file-row">
-                            <span
-                              className={`file-icon file-icon-${category
-                                .toLowerCase()
-                                .replace(/[^a-z]/g, "-")}`}
-                            />
-                            <strong>{challenge.title}.story</strong>
-                          </div>
-                          <span className="mission-status">
-                            {complete
-                              ? "done"
-                              : unlocked
-                                ? challenge.badge.toLowerCase()
-                                : "locked"}
-                          </span>
-                        </button>
-                      );
-                    })}
+                return (
+                  <div key={challenge.id}>
+                    {showCategory ? (
+                      <div className="section-label section-label-category">
+                        {challenge.category}
+                      </div>
+                    ) : null}
+                    <button
+                      className={`mission-card ${index === activeIndex ? "active" : ""} ${
+                        complete ? "complete" : ""
+                      }`}
+                      disabled={!unlocked}
+                      onClick={() => {
+                        if (unlocked) {
+                          setActiveIndex(index);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <div className="file-row">
+                        <span
+                          className={`file-icon file-icon-${(challenge.category ?? "general")
+                            .toLowerCase()
+                            .replace(/[^a-z]/g, "-")}`}
+                        />
+                        <strong>
+                          {index + 1}. {challenge.title}.story
+                        </strong>
+                      </div>
+                      <span className="mission-status">
+                        {complete
+                          ? "done"
+                          : unlocked
+                            ? challenge.badge.toLowerCase()
+                            : "locked"}
+                      </span>
+                    </button>
                   </div>
-                ));
-              })()}
+                );
+              })}
             </div>
 
             <div className="sidebar-footer">
@@ -1110,169 +1417,116 @@ export default function Home() {
 
               event.preventDefault();
               setDragState({
-                type: "left",
-                startX: event.clientX,
                 startWidth: layout.leftWidth,
-              });
-            }}
-            role="separator"
-          />
-
-          <section className="editor-column panel-surface">
-            <div className="editor-toolbar">
-              <div className="tab-row">
-                <span className="file-tab active">
-                  {activeChallenge.title}.story
-                </span>
-                <span className="file-tab muted">console.txt</span>
-              </div>
-
-              <div className="action-row">
-                <button className="primary-button" onClick={runProgram} type="button">
-                  Run
-                </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => setShowHint((current) => !current)}
-                  type="button"
-                >
-                  {showHint ? "Hide hint" : "Need a hint?"}
-                </button>
-                <button
-                  className={`secondary-button ${
-                    scratchAssistEnabled ? "mode-button-active" : ""
-                  }`}
-                  onClick={() => setScratchAssistEnabled((current) => !current)}
-                  type="button"
-                >
-                  {scratchAssistEnabled ? "Scratch assist: on" : "Scratch assist: off"}
-                </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => updateProgram("")}
-                  type="button"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-
-            <div className="editor-info">
-              <span>{activeChallenge.badge}</span>
-              <span>{lineCount} lines</span>
-              <span>{statusLabel}</span>
-            </div>
-
-            <div className="editor-shell">
-              <div className="editor-gutter" ref={editorGutterRef} aria-hidden="true">
-                {Array.from({ length: editorLineCount }, (_, index) => (
-                  <span key={`line-${index + 1}`}>{index + 1}</span>
-                ))}
-              </div>
-
-              <div className="editor-stack">
-                <pre
-                  className="editor-highlight"
-                  ref={editorBackdropRef}
-                  aria-hidden="true"
-                  dangerouslySetInnerHTML={{ __html: `${highlightedProgram}\n` }}
-                />
-                <textarea
-                  className="editor-input"
-                  placeholder={activeChallenge.placeholder}
-                  ref={editorInputRef}
-                  spellCheck={false}
-                  value={program}
-                  onChange={(event) => {
-                    updateProgram(event.target.value);
-                    syncEditorSelection(event.currentTarget);
-                  }}
-                  onClick={(event) => syncEditorSelection(event.currentTarget)}
-                  onKeyDown={handleEditorKeyDown}
-                  onKeyUp={(event) => syncEditorSelection(event.currentTarget)}
-                  onScroll={syncEditorScroll}
-                  onSelect={(event) => syncEditorSelection(event.currentTarget)}
-                />
-              </div>
-            </div>
-
-            <div className="editor-footer">
-              <span>{lineCount} lines</span>
-              <span>
-                {showHint
-                  ? activeChallenge.hint
-                  : scratchAssistEnabled && autocompletePreview
-                    ? `Tab completes: ${autocompletePreview.preview}`
-                    : scratchAssistEnabled
-                      ? "Tab autocompletes Scratch-style commands."
-                      : "Hint is hidden."}
-              </span>
-              <span className={`footer-status footer-status-${runState}`}>
-                {allProblems.length > 0
-                  ? `${allProblems.length} problem${allProblems.length > 1 ? "s" : ""}`
-                  : celebration || statusLabel}
-              </span>
-            </div>
-          </section>
-
-          <div
-            aria-label="Resize side panel"
-            className="resize-handle resize-handle-vertical"
-            onPointerDown={(event) => {
-              if (isCompactLayout) {
-                return;
-              }
-
-              event.preventDefault();
-              setDragState({
-                type: "right",
                 startX: event.clientX,
-                startWidth: layout.rightWidth,
+                type: "left",
               });
             }}
             role="separator"
           />
 
-          <aside className="inspector-column" style={inspectorStyle}>
-            <div className="panel-surface info-card">
-              <div className="section-label">Mission</div>
-              <div className={`run-status run-status-${runState}`}>
-                <strong>{statusLabel}</strong>
-                <span>{statusMessage}</span>
-              </div>
-              <h3>{activeChallenge.title}</h3>
-              <p className="mission-copy">{activeChallenge.story}</p>
-              <div className="goal-box">
-                <strong>Goal</strong>
-                <p>{activeChallenge.mission}</p>
-              </div>
-              <div className="goal-box subtle-box">
-                <strong>Pass condition</strong>
-                <p>{activeChallenge.winText}</p>
-              </div>
-              {showHint ? (
-                <div className="goal-box hint-box">
-                  <strong>Hint</strong>
-                  <p>{activeChallenge.hint}</p>
+          <section className="workbench-column" style={workbenchStyle}>
+            <section
+              className={`editor-column panel-surface ${successFlash ? "editor-success" : ""}`}
+            >
+              <div className="editor-toolbar">
+                <div className="tab-row">
+                  <span className="file-tab active">{activeChallenge.title}.story</span>
                 </div>
-              ) : null}
-              <div className="goal-box guide-box">
-                <strong>Allowed commands</strong>
-                <p className="guide-copy">
-                  Scratch-style syntax is allowed here. Use Tab to finish commands faster.
-                </p>
-                <div className="guide-list">
-                  {languageGuide.map((line) => (
-                    <code key={line} className="guide-line">
-                      {line}
-                    </code>
+
+                <div className="action-row">
+                  <button className="primary-button" onClick={runProgram} type="button">
+                    Run
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => setShowHint((current) => !current)}
+                    type="button"
+                  >
+                    {showHint ? "Hide hint" : "Hint"}
+                  </button>
+                  <button
+                    className={`secondary-button ${assistEnabled ? "mode-button-active" : ""}`}
+                    onClick={() => setAssistEnabled((current) => !current)}
+                    type="button"
+                  >
+                    {assistEnabled ? "Assist on" : "Assist off"}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => updateProgram("")}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="editor-info">
+                <span>{activeChallenge.badge}</span>
+                <span>{lineCount} lines</span>
+                <span>{statusLabel}</span>
+              </div>
+
+              <div className="editor-shell">
+                <div className="editor-gutter" ref={editorGutterRef} aria-hidden="true">
+                  {Array.from({ length: editorLineCount }, (_, index) => (
+                    <span key={`line-${index + 1}`}>{index + 1}</span>
                   ))}
                 </div>
+
+                <div className="editor-stack">
+                  {successFlash ? (
+                    <div className="success-overlay" aria-hidden="true">
+                      <div className="success-badge">Passed</div>
+                    </div>
+                  ) : null}
+                  <pre
+                    className="editor-highlight"
+                    ref={editorBackdropRef}
+                    aria-hidden="true"
+                    dangerouslySetInnerHTML={{ __html: `${highlightedProgram}\n` }}
+                  />
+                  <textarea
+                    className="editor-input"
+                    placeholder={activeChallenge.placeholder}
+                    ref={editorInputRef}
+                    spellCheck={false}
+                    value={program}
+                    onChange={(event) => {
+                      updateProgram(event.target.value);
+                      syncEditorSelection(event.currentTarget);
+                    }}
+                    onClick={(event) => syncEditorSelection(event.currentTarget)}
+                    onKeyDown={handleEditorKeyDown}
+                    onKeyUp={(event) => syncEditorSelection(event.currentTarget)}
+                    onScroll={syncEditorScroll}
+                    onSelect={(event) => syncEditorSelection(event.currentTarget)}
+                  />
+                </div>
               </div>
-            </div>
+
+              <div className="editor-footer">
+                <span>{lineCount} lines</span>
+                <span>
+                  {showHint
+                    ? activeChallenge.hint
+                    : assistEnabled && autocompletePreview
+                      ? `Tab completes: ${autocompletePreview.preview}`
+                      : assistEnabled
+                        ? "Tab can autocomplete Scratch-style commands."
+                        : "Hints are hidden."}
+                </span>
+                <span className={`footer-status footer-status-${runState}`}>
+                  {allProblems.length > 0
+                    ? `${allProblems.length} problem${allProblems.length > 1 ? "s" : ""}`
+                    : celebration || statusLabel}
+                </span>
+              </div>
+            </section>
 
             <div
-              aria-label="Resize mission panel"
+              aria-label="Resize output dock"
               className="resize-handle resize-handle-horizontal"
               onPointerDown={(event) => {
                 if (isCompactLayout) {
@@ -1281,82 +1535,131 @@ export default function Home() {
 
                 event.preventDefault();
                 setDragState({
-                  type: "mission",
+                  startHeight: layout.bottomHeight,
                   startY: event.clientY,
-                  startHeight: layout.missionHeight,
+                  type: "bottom",
                 });
               }}
               role="separator"
             />
 
-            <div className="panel-surface code-card">
-              <div className="output-tabs">
-                <button
-                  className={`output-tab ${outputTab === "terminal" ? "active" : ""}`}
-                  onClick={() => setOutputTab("terminal")}
-                  type="button"
-                >
-                  Terminal
-                </button>
-                <button
-                  className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
-                  onClick={() => setOutputTab("javascript")}
-                  type="button"
-                >
-                  JavaScript
-                </button>
-                <button
-                  className={`output-tab ${outputTab === "problems" ? "active" : ""}`}
-                  onClick={() => setOutputTab("problems")}
-                  type="button"
-                >
-                  Problems
-                </button>
+            <section className="dock-area" ref={bottomDockRef}>
+              <div className="dock-area-header">
+                <strong>Output Dock</strong>
+                <span>Drag Terminal or Problems to float them, then drag them back here to dock.</span>
               </div>
-              <pre className="code-view">
-                {outputTab === "terminal"
-                  ? result.output.length > 0
-                    ? [`$ run ${activeChallenge.title}.story`, ...result.output].join("\n")
-                    : "$ Run your code to see output."
-                  : result.generatedCode.length > 0
-                    ? outputTab === "javascript"
-                      ? result.generatedCode.join("\n")
-                      : allProblems
-                          .map((problem) =>
-                            problem.line
-                              ? `Line ${problem.line}: ${problem.message}`
-                              : problem.message,
-                          )
-                          .join("\n")
-                    : outputTab === "javascript"
-                      ? "// Translated JavaScript will appear here."
-                      : allProblems.length > 0
-                        ? allProblems
-                            .map((problem) =>
-                              problem.line
-                                ? `Line ${problem.line}: ${problem.message}`
-                                : problem.message,
-                            )
-                            .join("\n")
-                        : "No problems found."}
-              </pre>
-              <div className="debug-list">
-                {allProblems.length > 0 ? (
-                  allProblems.map((problem) => (
-                    <p key={problem.id} className="error-line">
-                      {problem.line ? `Line ${problem.line}: ` : ""}
-                      {problem.message}
-                    </p>
-                  ))
-                ) : result.steps.length > 0 ? (
-                  result.steps.map((step) => <p key={step}>{step}</p>)
+              <div
+                className="dock-area-grid"
+                style={{
+                  gridTemplateColumns:
+                    dockBottomPanels.length <= 1 ? "1fr" : "repeat(2, minmax(0, 1fr))",
+                }}
+              >
+                {dockBottomPanels.length > 0 ? (
+                  dockBottomPanels.map((panelId) => renderPanel(panelId))
                 ) : (
-                  <p>Status messages will appear here after you run the mission.</p>
+                  <div className="dock-empty">
+                    Drag Terminal or Problems here to dock them again.
+                  </div>
                 )}
               </div>
+            </section>
+          </section>
+
+          <div
+            aria-label="Resize mission panel"
+            className="resize-handle resize-handle-vertical"
+            onPointerDown={(event) => {
+              if (isCompactLayout) {
+                return;
+              }
+
+              event.preventDefault();
+              setDragState({
+                startWidth: layout.rightWidth,
+                startX: event.clientX,
+                type: "right",
+              });
+            }}
+            role="separator"
+          />
+
+          <aside className="inspector-column panel-surface">
+            <div className="inspector-tabs">
+              <button
+                className={`output-tab ${inspectorTab === "mission" ? "active" : ""}`}
+                onClick={() => setInspectorTab("mission")}
+                type="button"
+              >
+                Mission
+              </button>
+              <button
+                className={`output-tab ${inspectorTab === "commands" ? "active" : ""}`}
+                onClick={() => setInspectorTab("commands")}
+                type="button"
+              >
+                Commands
+              </button>
+            </div>
+
+            <div className="inspector-body">
+              {inspectorTab === "mission" ? (
+                <div className="info-card">
+                  <div className={`run-status run-status-${runState}`}>
+                    <strong>{statusLabel}</strong>
+                    <span>{statusMessage}</span>
+                  </div>
+                  <h3>{activeChallenge.title}</h3>
+                  <p className="mission-copy">{activeChallenge.story}</p>
+                  <div className="goal-box">
+                    <strong>Goal</strong>
+                    <p>{activeChallenge.mission}</p>
+                  </div>
+                  <div className="goal-box subtle-box">
+                    <strong>Pass condition</strong>
+                    <p>{activeChallenge.winText}</p>
+                  </div>
+                  {showHint ? (
+                    <div className="goal-box hint-box">
+                      <strong>Hint</strong>
+                      <p>{activeChallenge.hint}</p>
+                    </div>
+                  ) : (
+                    <div className="goal-box subtle-box">
+                      <strong>Hint</strong>
+                      <p>Hidden until you ask for it.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="info-card">
+                  <div className="goal-box subtle-box">
+                    <strong>Command Library</strong>
+                    <p className="guide-copy">
+                      These are general building blocks. They are examples, not mission answers.
+                    </p>
+                  </div>
+                  <div className="command-library">
+                    {commandLibrary.map((section) => (
+                      <div className="command-section" key={section.title}>
+                        <strong>{section.title}</strong>
+                        <div className="guide-list">
+                          {section.lines.map((line) => (
+                            <code className="guide-line" key={line}>
+                              {line}
+                            </code>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </aside>
         </section>
+
+        {floatingPanels.map((panelId) => renderPanel(panelId, true))}
       </section>
     </main>
   );

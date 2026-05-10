@@ -1,4 +1,4 @@
-import { StoryResult } from "./story-runtime";
+import { StoryResult, StoryValue } from "./story-runtime";
 
 export type Challenge = {
   id: string;
@@ -23,178 +23,230 @@ const outputHas = (result: StoryResult, text: string) =>
   result.errors.length === 0 &&
   result.output.some((line) => line.trim().toLowerCase() === text.toLowerCase());
 
-const hasListValue = (result: StoryResult, target: number[]) =>
-  Object.values(result.variables).some((value) => sameArray(value, target));
+const outputMatchesAny = (result: StoryResult, values: string[]) =>
+  values.some((value) => outputHas(result, value));
 
 const outputContains = (result: StoryResult, text: string) =>
   result.errors.length === 0 &&
-  result.output.some((line) => line.trim().toLowerCase().includes(text.toLowerCase()));
+  result.output.some((line) =>
+    line.trim().toLowerCase().includes(text.toLowerCase()),
+  );
+
+const variableHasValue = (result: StoryResult, target: StoryValue) =>
+  Object.values(result.variables).some((value) => value === target);
+
+const variableHasArray = (result: StoryResult, target: StoryValue[]) =>
+  Object.values(result.variables).some((value) => sameArray(value, target));
+
+const hasAnyListWithLength = (result: StoryResult, minimum: number) =>
+  Object.values(result.variables).some(
+    (value) => Array.isArray(value) && value.length >= minimum,
+  );
+
+const sourceHas = (result: StoryResult, pattern: RegExp) =>
+  pattern.test(result.source);
+
+const listSecondItemWasPrinted = (result: StoryResult) =>
+  Object.values(result.variables).some((value) => {
+    if (!Array.isArray(value) || value.length < 2) {
+      return false;
+    }
+
+    return outputHas(result, String(value[1]));
+  });
 
 export const challenges: Challenge[] = [
   {
-    id: "echo-canyon",
+    id: "club-roll-call",
     category: "Tutorial",
     title: "Club Roll Call",
     badge: "Start",
     story:
       "The coding club projector is still asleep. It wakes up when someone types the first message of the day.",
     mission:
-      "Write one line that makes the screen say hello. You can greet the class, your pet rock, or your future Python self.",
+      "Make the screen say hello in your own words.",
     winText: "Pass when at least one line appears with no errors.",
-    hint: "Try Scratch-style code first: say \"Hello!\". Later in Python, this becomes print(\"Hello!\").",
+    hint: "Use a talking command, not a variable command.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nIdeas:\nsay \"Hello, Code Club!\"\n\nOr:\nshow \"Projector online\"",
+    placeholder: "Write one action per line.",
     check: (result) =>
       result.errors.length === 0 &&
-      result.output.length > 0,
+      result.output.length > 0 &&
+      sourceHas(result, /^\s*(say|show|print)\b/im),
   },
   {
-    id: "signal-print",
+    id: "mascot-message",
     category: "Tutorial",
     title: "Mascot Message",
     badge: "Words",
     story:
-      "Your team's cardboard robot mascot needs a catchphrase for the hallway poster.",
+      "Your cardboard team mascot needs a catchphrase for the hallway poster.",
     mission:
-      "Make the mascot say any short status message that sounds cheerful or dramatic.",
-    winText: "Pass when any line prints successfully.",
-    hint: "You can use say \"We are ready!\" or save words in a variable first and then show them.",
+      "Save a short message in a variable, then display it.",
+    winText: "Pass when a saved text message gets printed.",
+    hint: "This one wants storage first, then output.",
     starter: "",
-    placeholder: "Examples:\nsay \"Team Turbo is ready!\"\nvariable status: \"Batteries full\"\nshow status",
-    check: (result) => result.errors.length === 0 && result.output.length > 0,
+    placeholder: "Try storing text before you show it.",
+    check: (result) =>
+      result.errors.length === 0 &&
+      result.output.length > 0 &&
+      Object.values(result.variables).some((value) => typeof value === "string") &&
+      sourceHas(result, /^\s*(variable|let|const|set)\b/im),
   },
   {
-    id: "repeat-warmup",
+    id: "robot-mic-check",
     category: "Control Flow",
     title: "Robot Mic Check",
     badge: "Repeat",
-    story: "A tiny stage robot must say the same test word three times before the talent show starts.",
-    mission: "Use a repeat-style idea to make three lines of output.",
-    winText: "Pass when the console shows three lines.",
-    hint: "Scratch-style works here: repeat 3 times, then put an indented say line underneath.",
+    story:
+      "A tiny stage robot must repeat the same test word three times before the talent show starts.",
+    mission:
+      "Use a repeat block to make exactly three lines of output.",
+    winText: "Pass when a repeat-style solution makes three lines.",
+    hint: "A repeat block needs an indented line under it.",
     starter: "",
-    placeholder: "One action per line.\n\nrepeat 3 times\n  say \"beep\"",
-    check: (result) => result.errors.length === 0 && result.output.length >= 3,
+    placeholder: "Use a repeat block here.",
+    check: (result) =>
+      result.errors.length === 0 &&
+      result.output.length === 3 &&
+      sourceHas(result, /^\s*repeat\b/im),
   },
   {
-    id: "inventory-stack",
+    id: "backpack-builder",
     category: "Data",
     title: "Backpack Builder",
     badge: "Lists",
-    story: "Your game character is leaving for a forest quest and their backpack is still empty.",
-    mission: "Make a list with three or more items and print the whole backpack.",
-    winText: "Pass when the console shows a list.",
-    hint: "Use anything you want: snacks, tools, stickers, or dragon-spraying water bottles.",
+    story:
+      "Your game character is packing for a forest quest and wants to know which item sits second in the bag.",
+    mission:
+      "Create a list with at least three items, then show item 2 of that list.",
+    winText: "Pass when the second item from a real list is printed.",
+    hint: "This mission wants list access, not just printing random words.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nmake a list called backpack with \"map\", \"snack\", \"rope\"\nshow backpack",
+    placeholder: "Build a list, then pull one item out of it.",
     check: (result) =>
       result.errors.length === 0 &&
-      result.output.some((line) => line.includes("[")) &&
-      result.lineCount >= 2,
+      hasAnyListWithLength(result, 3) &&
+      listSecondItemWasPrinted(result) &&
+      sourceHas(result, /\bitem\s+2\s+of\b/i),
   },
   {
-    id: "snack-counter",
+    id: "bake-sale-total",
     category: "Data",
     title: "Bake Sale Total",
     badge: "Numbers",
     story:
       "Four friends dropped cookie boxes on your table right before the school bake sale opened.",
     mission:
-      "Use the numbers 3, 5, 2, 4 and print the total number of boxes.",
-    winText: "Pass when the console shows 14.",
-    hint: "A nice beginner path is: make a list, set total to sum of that list, then show total.",
+      "Use 3, 5, 2, 4 and calculate the total.",
+    winText: "Pass when the program really works out 14.",
+    hint: "You can total the numbers with a helper or by building the answer step by step.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nmake a list called boxes with 3, 5, 2, 4\nset total to sum of boxes\nshow total",
+    placeholder: "Use the given numbers to build a real total.",
     check: (result) =>
       result.errors.length === 0 &&
-      outputHas(result, "14"),
+      variableHasArray(result, [3, 5, 2, 4]) &&
+      variableHasValue(result, 14) &&
+      outputHas(result, "14") &&
+      sourceHas(result, /\b(sum of|change\b|plus|\+)\b/i),
   },
   {
-    id: "mountain-watch",
+    id: "skate-ramp-record",
     category: "Data",
     title: "Skate Ramp Record",
     badge: "Compare",
     story:
-      "Your friends measured five homemade skate ramps and now want to brag about the tallest one.",
+      "Your friends measured five homemade skate ramps and want the tallest one without guessing.",
     mission:
-      "Use heights 4, 12, 7, 18, 9 and report the biggest height.",
-    winText: "Pass when the console shows 18.",
-    hint: "The phrase biggest number in heights works, and largest number in heights works too.",
+      "Use heights 4, 12, 7, 18, 9 and find the biggest value.",
+    winText: "Pass when the tallest value is found from the list.",
+    hint: "Use a list and a biggest-style helper.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nmake a list called heights with 4, 12, 7, 18, 9\nset tallest to biggest number in heights\nshow tallest",
+    placeholder: "Find the biggest height from the given list.",
     check: (result) =>
       result.errors.length === 0 &&
-      outputHas(result, "18"),
+      variableHasArray(result, [4, 12, 7, 18, 9]) &&
+      outputHas(result, "18") &&
+      sourceHas(result, /\b(biggest|largest) number in\b/i),
   },
   {
-    id: "smallest-beacon",
+    id: "dimmest-flashlight",
     category: "Data",
     title: "Dimmest Flashlight",
     badge: "Compare",
     story:
-      "You are testing four flashlights for a camping trip and need to spot the weakest one.",
+      "You are testing four flashlights for a camping trip and need the weakest one fast.",
     mission:
-      "Use 8, 3, 12, 5 and print the smallest value.",
-    winText: "Pass when the console shows 3.",
-    hint: "Try smallest number in beacons, then show the answer.",
+      "Use 8, 3, 12, 5 and find the smallest value.",
+    winText: "Pass when the smallest value is found from the list.",
+    hint: "Use a list and a smallest-style helper.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nmake a list called beacons with 8, 3, 12, 5\nset lowest to smallest number in beacons\nshow lowest",
+    placeholder: "Find the smallest number from the list.",
     check: (result) =>
-      result.errors.length === 0 && outputContains(result, "3"),
+      result.errors.length === 0 &&
+      variableHasArray(result, [8, 3, 12, 5]) &&
+      outputHas(result, "3") &&
+      sourceHas(result, /\bsmallest number in\b/i),
   },
   {
-    id: "sum-loop",
+    id: "scoreboard-clicker",
     category: "Control Flow",
     title: "Scoreboard Clicker",
-    badge: "Repeat",
-    story: "An old arcade machine needs to count up points one step at a time.",
-    mission: "Make the total for 1, 2, 3, 4 using any method you like.",
-    winText: "Pass when the console shows 10.",
-    hint: "You can sum directly, or start at 0 and use change total by ... several times.",
+    badge: "Change",
+    story:
+      "An old arcade scoreboard starts at zero and only understands tiny score changes.",
+    mission:
+      "Start at 0 and change the total until it becomes 10.",
+    winText: "Pass when a changing-number solution reaches 10.",
+    hint: "This one wants the number to grow over time.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nmake a number called total with 0\nchange total by 1\nchange total by 2\nchange total by 3\nchange total by 4\nshow total",
-    check: (result) => result.errors.length === 0 && result.output.some((o) => o.includes("10")),
+    placeholder: "Start from 0, then change the total.",
+    check: (result) =>
+      result.errors.length === 0 &&
+      variableHasValue(result, 10) &&
+      outputHas(result, "10") &&
+      (result.source.match(/^\s*change\b/gim)?.length ?? 0) >= 2,
   },
   {
-    id: "countdown-triple",
-    category: "Control Flow",
-    title: "Rocket Countdown",
-    badge: "Repeat",
-    story: "Your paper rocket only launches if the countdown sounds dramatic enough.",
-    mission: "Output at least three countdown lines in any style.",
-    winText: "Pass when the console shows three or more lines.",
-    hint: "You can do three separate say lines, or use repeat if you want the same line more than once.",
+    id: "party-guest-list",
+    category: "Data",
+    title: "Party Guest Shuffle",
+    badge: "Lists",
+    story:
+      "Your guest list changed three times in a row, and now you need the final order to be right.",
+    mission:
+      "Start a list with \"Amy\", \"Ben\", \"Dia\". Insert \"Kai\" as item 2, replace item 4 with \"Zoe\", then show the finished list.",
+    winText: "Pass when the final list becomes [Amy, Kai, Ben, Zoe].",
+    hint: "This mission uses list editing blocks.",
     starter: "",
-    placeholder: "Example:\nsay \"3\"\nsay \"2\"\nsay \"1\"",
-    check: (result) => result.errors.length === 0 && result.output.length >= 3,
+    placeholder: "Build a list, then edit the list in place.",
+    check: (result) =>
+      result.errors.length === 0 &&
+      variableHasArray(result, ["Amy", "Kai", "Ben", "Zoe"]) &&
+      outputContains(result, "[Amy, Kai, Ben, Zoe]") &&
+      sourceHas(result, /\binsert\b/i) &&
+      sourceHas(result, /\breplace item\b/i),
   },
   {
-    id: "two-sum-quest",
+    id: "treasure-key-pair",
     category: "Algorithms",
     title: "Treasure Key Pair",
     badge: "Boss",
     story:
       "A treasure chest has four numbered keys, but only two of them open the lock together.",
     mission:
-      "Use the numbers 2, 7, 11, 15 and the target 9. Print the pair of index spots that match.",
-    winText: "Pass when the console shows [0, 1].",
-    hint: "This one has a built-in helper: index pair from nums that adds to target.",
+      "Use 2, 7, 11, 15 and target 9 to find the matching pair of index spots.",
+    winText: "Pass when the correct pair [0, 1] is found.",
+    hint: "There is a built-in pair helper, but you still need to use the real list and target.",
     starter: "",
-    placeholder:
-      "One action per line.\n\nmake a list called nums with 2, 7, 11, 15\nmake a number called target with 9\nset pair to index pair from nums that adds to target\nshow pair",
+    placeholder: "Set up the numbers and target, then find the pair.",
     check: (result) =>
       result.errors.length === 0 &&
+      variableHasArray(result, [2, 7, 11, 15]) &&
+      variableHasValue(result, 9) &&
+      sourceHas(result, /\bindex pair from\b/i) &&
       (sameArray(result.variables.pair, [0, 1]) ||
         sameArray(result.variables.pair, [1, 0]) ||
-        outputContains(result, "[0, 1]") ||
-        outputContains(result, "[1, 0]") ||
-        outputContains(result, "0, 1") ||
-        outputContains(result, "1, 0")),
+        outputMatchesAny(result, ["[0, 1]", "[1, 0]", "0, 1", "1, 0"])),
   },
 ];

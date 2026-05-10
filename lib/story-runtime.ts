@@ -7,6 +7,7 @@ export type StoryResult = {
   steps: string[];
   errors: string[];
   lineCount: number;
+  source: string;
 };
 
 type ParsedLine = {
@@ -502,6 +503,15 @@ const evaluateExpression = (
     return list[index];
   }
 
+  match = trimmed.match(/^(\w+) contains (.+)$/i);
+  if (match) {
+    const listName = normalizeName(match[1]);
+    const list = getList(variables[listName], listName);
+    const target = resolveToken(match[2], variables);
+
+    return list.some((item) => item === target);
+  }
+
   match = trimmed.match(/^index pair from (\w+) that adds to (.+)$/i);
   if (match) {
     const listName = normalizeName(match[1]);
@@ -646,6 +656,20 @@ const executeCommand = (
       return;
     }
 
+    match = cleanedLine.match(/^create list ([a-zA-Z][\w\s]*)$/i);
+    if (match) {
+      const variableName = normalizeName(match[1]);
+      const value: StoryValue = [];
+      const jsLine = defineOrAssign(context.variables, variableName, value);
+
+      context.variables[variableName] = value;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, jsLine, jsDepth);
+      }
+      context.steps.push(`Created ${variableName}.`);
+      return;
+    }
+
     match = cleanedLine.match(
       /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/i,
     );
@@ -758,6 +782,68 @@ const executeCommand = (
         );
       }
       context.steps.push(`Added an item to ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^insert (.+) at (.+) of ([a-zA-Z][\w\s]*)$/i);
+    if (match) {
+      const nextItem = resolveToken(match[1], context.variables);
+      const requestedIndex = getNumber(resolveToken(match[2], context.variables), "item number");
+      const variableName = normalizeName(match[3]);
+      const list = [...getList(context.variables[variableName], variableName)];
+      const index = Math.max(0, Math.floor(requestedIndex) - 1);
+
+      list.splice(index, 0, nextItem);
+      context.variables[variableName] = list;
+      if (emitCode) {
+        pushGeneratedCode(
+          context.generatedCode,
+          `${variableName}.splice(${index}, 0, ${formatJsValue(nextItem)});`,
+          jsDepth,
+        );
+      }
+      context.steps.push(`Inserted an item into ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^replace item (.+) of ([a-zA-Z][\w\s]*) with (.+)$/i);
+    if (match) {
+      const requestedIndex = getNumber(resolveToken(match[1], context.variables), "item number");
+      const variableName = normalizeName(match[2]);
+      const nextItem = resolveToken(match[3], context.variables);
+      const list = [...getList(context.variables[variableName], variableName)];
+      const index = Math.max(0, Math.floor(requestedIndex) - 1);
+
+      list[index] = nextItem;
+      context.variables[variableName] = list;
+      if (emitCode) {
+        pushGeneratedCode(
+          context.generatedCode,
+          `${variableName}[${index}] = ${formatJsValue(nextItem)};`,
+          jsDepth,
+        );
+      }
+      context.steps.push(`Replaced an item in ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^delete item (.+) of ([a-zA-Z][\w\s]*)$/i);
+    if (match) {
+      const requestedIndex = getNumber(resolveToken(match[1], context.variables), "item number");
+      const variableName = normalizeName(match[2]);
+      const list = [...getList(context.variables[variableName], variableName)];
+      const index = Math.max(0, Math.floor(requestedIndex) - 1);
+
+      list.splice(index, 1);
+      context.variables[variableName] = list;
+      if (emitCode) {
+        pushGeneratedCode(
+          context.generatedCode,
+          `${variableName}.splice(${index}, 1);`,
+          jsDepth,
+        );
+      }
+      context.steps.push(`Deleted an item from ${variableName}.`);
       return;
     }
 
@@ -953,5 +1039,6 @@ export const runStoryProgram = (source: string): StoryResult => {
     steps,
     errors,
     lineCount: parsedLines.length,
+    source,
   };
 };
