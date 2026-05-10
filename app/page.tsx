@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { challenges } from "@/lib/challenges";
 import { runStoryProgram, type StoryResult } from "@/lib/story-runtime";
 
@@ -32,6 +32,214 @@ const languageGuide = [
   "show total",
   "print text",
 ];
+
+type EditorIssue = {
+  line: number;
+  token: string;
+  message: string;
+};
+
+const commandKeywords = new Set([
+  "make",
+  "variable",
+  "let",
+  "const",
+  "set",
+  "answer",
+  "add",
+  "push",
+  "show",
+  "print",
+]);
+
+const typeKeywords = new Set(["list", "number", "word", "text", "boolean", "flag"]);
+
+const expressionKeywords = new Set([
+  "called",
+  "with",
+  "sum",
+  "of",
+  "biggest",
+  "smallest",
+  "size",
+  "first",
+  "last",
+  "item",
+  "in",
+  "index",
+  "pair",
+  "from",
+  "that",
+  "adds",
+  "to",
+  "plus",
+  "minus",
+  "times",
+  "divided",
+  "by",
+  "true",
+  "false",
+  "and",
+]);
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const editDistance = (a: string, b: string) => {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const table = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
+
+  for (let i = 0; i < rows; i += 1) {
+    table[i][0] = i;
+  }
+
+  for (let j = 0; j < cols; j += 1) {
+    table[0][j] = j;
+  }
+
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+
+      table[i][j] = Math.min(
+        table[i - 1][j] + 1,
+        table[i][j - 1] + 1,
+        table[i - 1][j - 1] + substitutionCost,
+      );
+    }
+  }
+
+  return table[a.length][b.length];
+};
+
+const suggestCommand = (token: string) => {
+  const normalized = token.toLowerCase();
+  let best: { command: string; distance: number } | null = null;
+
+  for (const command of commandKeywords) {
+    const distance = editDistance(normalized, command);
+
+    if (!best || distance < best.distance) {
+      best = { command, distance };
+    }
+  }
+
+  if (!best) {
+    return null;
+  }
+
+  return best.distance <= 2 ? best.command : null;
+};
+
+const lintProgram = (program: string): EditorIssue[] => {
+  const issues: EditorIssue[] = [];
+  const lines = program.split(/\r?\n/);
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    const firstToken = (trimmed.match(/^([a-zA-Z_][\w-]*)/) ?? [""])[1];
+
+    if (!firstToken) {
+      return;
+    }
+
+    const isAssignmentLike = /^([a-zA-Z_][\w]*)\s*=/.test(trimmed);
+    const lowerFirst = firstToken.toLowerCase();
+
+    if (!commandKeywords.has(lowerFirst) && !isAssignmentLike) {
+      const suggestion = suggestCommand(firstToken);
+
+      issues.push({
+        line: index + 1,
+        token: firstToken,
+        message: suggestion
+          ? `Unknown command "${firstToken}". Did you mean "${suggestion}"?`
+          : `Unknown command "${firstToken}".`,
+      });
+      return;
+    }
+
+    if (lowerFirst === "make") {
+      const makePattern =
+        /^make a (list|number|word|text|boolean|flag) called ([a-zA-Z][\w\s]*) with (.+)$/i;
+
+      if (!makePattern.test(trimmed)) {
+        issues.push({
+          line: index + 1,
+          token: "make",
+          message: "Expected: make a <type> called <name> with <value>",
+        });
+      }
+    }
+
+    if ((lowerFirst === "show" || lowerFirst === "print") && !/^(show|print)\s+.+$/i.test(trimmed)) {
+      issues.push({
+        line: index + 1,
+        token: firstToken,
+        message: "Expected a value after show/print.",
+      });
+    }
+  });
+
+  return issues;
+};
+
+const colorizeLine = (line: string, issueTokens: Set<string>) => {
+  if (!line) {
+    return "<span class=\"tok-whitespace\"> </span>";
+  }
+
+  const tokenPattern = /(\s+|"[^"]*"|'[^']*'|\b\d+(?:\.\d+)?\b|[a-zA-Z_][\w-]*|==|=|\[|\]|\(|\)|,|\.|:|;|\+|-|\*|\/)/g;
+  const parts = line.split(tokenPattern).filter((part) => part.length > 0);
+
+  return parts
+    .map((part) => {
+      const escaped = escapeHtml(part);
+
+      if (/^\s+$/.test(part)) {
+        return escaped;
+      }
+
+      const normalized = part.toLowerCase();
+      const classes: string[] = [];
+
+      if (commandKeywords.has(normalized)) {
+        classes.push("tok-command");
+      } else if (typeKeywords.has(normalized)) {
+        classes.push("tok-type");
+      } else if (expressionKeywords.has(normalized)) {
+        classes.push("tok-keyword");
+      } else if (/^"[^"]*"$|^'[^']*'$/.test(part)) {
+        classes.push("tok-string");
+      } else if (/^\d+(\.\d+)?$/.test(part)) {
+        classes.push("tok-number");
+      } else if (/^(=|\+|-|\*|\/|\[|\]|\(|\)|,|\.|:|;)$/.test(part)) {
+        classes.push("tok-operator");
+      }
+
+      if (issueTokens.has(part.toLowerCase())) {
+        classes.push("tok-error");
+      }
+
+      if (classes.length === 0) {
+        return escaped;
+      }
+
+      return `<span class=\"${classes.join(" ")}\">${escaped}</span>`;
+    })
+    .join("");
+};
 
 type RunState = "idle" | "success" | "not-yet" | "error";
 
@@ -67,7 +275,7 @@ export default function Home() {
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [celebration, setCelebration] = useState("");
   const [showHint, setShowHint] = useState(false);
-  const [outputTab, setOutputTab] = useState<"console" | "javascript">("console");
+  const [outputTab, setOutputTab] = useState<"terminal" | "javascript" | "problems">("terminal");
   const [runState, setRunState] = useState<RunState>("idle");
   const [layout, setLayout] = useState<LayoutState>({
     leftWidth: 220,
@@ -76,9 +284,27 @@ export default function Home() {
   });
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
+  const editorBackdropRef = useRef<HTMLPreElement | null>(null);
+  const editorGutterRef = useRef<HTMLDivElement | null>(null);
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
+  const liveIssues = useMemo(() => lintProgram(program), [program]);
+  const programLines = useMemo(() => program.split(/\r?\n/), [program]);
+
+  const highlightedProgram = useMemo(() => {
+    const issueTokensByLine = new Map<number, Set<string>>();
+
+    liveIssues.forEach((issue) => {
+      const existing = issueTokensByLine.get(issue.line) ?? new Set<string>();
+      existing.add(issue.token.toLowerCase());
+      issueTokensByLine.set(issue.line, existing);
+    });
+
+    return programLines
+      .map((line, index) => colorizeLine(line, issueTokensByLine.get(index + 1) ?? new Set<string>()))
+      .join("\n");
+  }, [liveIssues, programLines]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(completionStorageKey);
@@ -162,7 +388,7 @@ export default function Home() {
     const passed = activeChallenge.check(nextResult);
 
     setResult(nextResult);
-    setOutputTab("console");
+    setOutputTab("terminal");
 
     if (passed) {
       setCompletedIds((current) => {
@@ -185,7 +411,8 @@ export default function Home() {
   const canOpenChallenge = (index: number) =>
     index === 0 || completedIds.includes(challenges[index - 1].id);
 
-  const lineCount = program.trim().length === 0 ? 0 : program.split(/\r?\n/).length;
+  const lineCount = program.trim().length === 0 ? 0 : programLines.length;
+  const editorLineCount = Math.max(1, programLines.length);
   const completedCount = completedIds.length;
   const activeMissionComplete = completedIds.includes(activeChallenge.id);
   const statusLabel =
@@ -208,6 +435,20 @@ export default function Home() {
           : activeMissionComplete
             ? "This mission was already cleared before."
             : "Write your sentences and press Run.";
+
+  const runtimeProblems = result.errors.map((error, index) => ({
+    id: `runtime-${index}`,
+    line: null,
+    message: error,
+  }));
+
+  const lintProblems = liveIssues.map((issue, index) => ({
+    id: `lint-${index}`,
+    line: issue.line,
+    message: issue.message,
+  }));
+
+  const allProblems = [...lintProblems, ...runtimeProblems];
 
   const clamp = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
@@ -292,6 +533,20 @@ export default function Home() {
     : {
         gridTemplateRows: `${layout.missionHeight}px 6px minmax(0, 1fr)`,
       };
+
+    const syncEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
+      const nextTop = event.currentTarget.scrollTop;
+      const nextLeft = event.currentTarget.scrollLeft;
+
+      if (editorBackdropRef.current) {
+        editorBackdropRef.current.scrollTop = nextTop;
+        editorBackdropRef.current.scrollLeft = nextLeft;
+      }
+
+      if (editorGutterRef.current) {
+        editorGutterRef.current.scrollTop = nextTop;
+      }
+    };
 
   return (
     <main className="app-shell">
@@ -412,19 +667,38 @@ export default function Home() {
               <span>{statusLabel}</span>
             </div>
 
-            <textarea
-              className="editor"
-              placeholder={activeChallenge.placeholder}
-              spellCheck={false}
-              value={program}
-              onChange={(event) => updateProgram(event.target.value)}
-            />
+            <div className="editor-shell">
+              <div className="editor-gutter" ref={editorGutterRef} aria-hidden="true">
+                {Array.from({ length: editorLineCount }, (_, index) => (
+                  <span key={`line-${index + 1}`}>{index + 1}</span>
+                ))}
+              </div>
+
+              <div className="editor-stack">
+                <pre
+                  className="editor-highlight"
+                  ref={editorBackdropRef}
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: `${highlightedProgram}\n` }}
+                />
+                <textarea
+                  className="editor-input"
+                  placeholder={activeChallenge.placeholder}
+                  spellCheck={false}
+                  value={program}
+                  onChange={(event) => updateProgram(event.target.value)}
+                  onScroll={syncEditorScroll}
+                />
+              </div>
+            </div>
 
             <div className="editor-footer">
               <span>{lineCount} lines</span>
               <span>{showHint ? activeChallenge.hint : "Hint is hidden."}</span>
               <span className={`footer-status footer-status-${runState}`}>
-                {celebration || statusLabel}
+                {allProblems.length > 0
+                  ? `${allProblems.length} problem${allProblems.length > 1 ? "s" : ""}`
+                  : celebration || statusLabel}
               </span>
             </div>
           </section>
@@ -506,11 +780,11 @@ export default function Home() {
             <div className="panel-surface code-card">
               <div className="output-tabs">
                 <button
-                  className={`output-tab ${outputTab === "console" ? "active" : ""}`}
-                  onClick={() => setOutputTab("console")}
+                  className={`output-tab ${outputTab === "terminal" ? "active" : ""}`}
+                  onClick={() => setOutputTab("terminal")}
                   type="button"
                 >
-                  Console
+                  Terminal
                 </button>
                 <button
                   className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
@@ -519,21 +793,47 @@ export default function Home() {
                 >
                   JavaScript
                 </button>
+                <button
+                  className={`output-tab ${outputTab === "problems" ? "active" : ""}`}
+                  onClick={() => setOutputTab("problems")}
+                  type="button"
+                >
+                  Problems
+                </button>
               </div>
               <pre className="code-view">
-                {outputTab === "console"
+                {outputTab === "terminal"
                   ? result.output.length > 0
-                    ? result.output.join("\n")
-                    : "Run your code to see output."
+                    ? [`$ run ${activeChallenge.title}.story`, ...result.output].join("\n")
+                    : "$ Run your code to see output."
                   : result.generatedCode.length > 0
-                    ? result.generatedCode.join("\n")
-                    : "// Translated JavaScript will appear here."}
+                    ? outputTab === "javascript"
+                      ? result.generatedCode.join("\n")
+                      : allProblems
+                          .map((problem) =>
+                            problem.line
+                              ? `Line ${problem.line}: ${problem.message}`
+                              : problem.message,
+                          )
+                          .join("\n")
+                    : outputTab === "javascript"
+                      ? "// Translated JavaScript will appear here."
+                      : allProblems.length > 0
+                        ? allProblems
+                            .map((problem) =>
+                              problem.line
+                                ? `Line ${problem.line}: ${problem.message}`
+                                : problem.message,
+                            )
+                            .join("\n")
+                        : "No problems found."}
               </pre>
               <div className="debug-list">
-                {result.errors.length > 0 ? (
-                  result.errors.map((error) => (
-                    <p key={error} className="error-line">
-                      {error}
+                {allProblems.length > 0 ? (
+                  allProblems.map((problem) => (
+                    <p key={problem.id} className="error-line">
+                      {problem.line ? `Line ${problem.line}: ` : ""}
+                      {problem.message}
                     </p>
                   ))
                 ) : result.steps.length > 0 ? (
