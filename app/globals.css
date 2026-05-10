@@ -568,6 +568,23 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.console-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 6px minmax(0, 240px);
+}
+
+.console-grab {
+  cursor: row-resize;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.01));
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+.console-grab:hover {
+  background: rgba(0, 122, 204, 0.14);
+  transform: scaleY(1.15);
+}
+
 .terminal-topbar {
   display: flex;
   align-items: center;
@@ -625,9 +642,15 @@ textarea {
 }
 
 .code-card .code-view {
-  background: #10151f;
-  border-color: #2a3445;
-  color: #d9e2f2;
+  background: #ffffff;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.terminal-panel .code-view {
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
 }
 
 .debug-list {
@@ -656,26 +679,10 @@ textarea {
     min-height: 100vh;
   }
 
-  .ide-window {
-    height: auto;
-    grid-template-rows: auto auto;
+  .dock-row {
+    display: none;
   }
-
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 8px 12px;
-  }
-
-  .ide-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-body {
-    grid-template-rows: auto;
-  }
-
-  .resize-handle {
+  .dock-handle {
     display: none;
   }
 
@@ -710,5 +717,9 @@ textarea {
 
   .editor-shell {
     grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .console-shell {
+    grid-template-rows: 6px minmax(0, 220px);
   }
 }

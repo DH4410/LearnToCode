@@ -4,6 +4,7 @@ export type Challenge = {
   id: string;
   title: string;
   badge: string;
+  category?: string;
   story: string;
   mission: string;
   winText: string;
@@ -32,6 +33,7 @@ const outputContains = (result: StoryResult, text: string) =>
 export const challenges: Challenge[] = [
   {
     id: "echo-canyon",
+    category: "Tutorial",
     title: "Echo Canyon",
     badge: "Warm-up",
     story:
@@ -49,6 +51,7 @@ export const challenges: Challenge[] = [
   },
   {
     id: "snack-counter",
+    category: "Data",
     title: "Snack Counter",
     badge: "Logic",
     story:
@@ -66,6 +69,7 @@ export const challenges: Challenge[] = [
   },
   {
     id: "mountain-watch",
+    category: "Data",
     title: "Mountain Watch",
     badge: "Data",
     story:
@@ -83,6 +87,7 @@ export const challenges: Challenge[] = [
   },
   {
     id: "two-sum-quest",
+    category: "Algorithms",
     title: "Two Sum Quest",
     badge: "Challenge",
     story:
@@ -102,5 +107,31 @@ export const challenges: Challenge[] = [
         outputContains(result, "[1, 0]") ||
         outputContains(result, "0, 1") ||
         outputContains(result, "1, 0")),
+  },
+  {
+    id: "repeat-warmup",
+    category: "Control Flow",
+    title: "Repeat Warm-up",
+    badge: "Loops",
+    story: "Your robot needs to beep three times to signal readiness.",
+    mission: "Produce three output lines using a repeat-style approach.",
+    winText: "Pass when console shows three lines.",
+    hint: "Use repeated show lines or build a list and print items.",
+    starter: "",
+    placeholder: "One action per line.\n\nExample:\nshow \"beep\"\nshow \"beep\"\nshow \"beep\"",
+    check: (result) => result.errors.length === 0 && result.output.length >= 3,
+  },
+  {
+    id: "sum-loop",
+    category: "Control Flow",
+    title: "Sum Loop",
+    badge: "Loops",
+    story: "A counter needs to add a series of numbers quickly using repeat logic.",
+    mission: "Produce the total of 1, 2, 3, 4 using any method.",
+    winText: "Pass when console shows 10.",
+    hint: "You can sum directly or use repeated adds.",
+    starter: "",
+    placeholder: "One action per line.",
+    check: (result) => result.errors.length === 0 && result.output.some((o) => o.includes("10")),
   },
 ];

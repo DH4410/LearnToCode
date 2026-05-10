@@ -260,7 +260,6 @@ type LayoutState = {
   rightWidth: number;
   missionHeight: number;
   bottomTerminalHeight: number;
-  terminalDock: "right" | "bottom";
 };
 
 type DragState =
@@ -283,11 +282,6 @@ type DragState =
       type: "terminal-bottom";
       startY: number;
       startHeight: number;
-    }
-  | {
-      type: "terminal-dock";
-      startX: number;
-      startY: number;
     };
 
 export default function Home() {
@@ -306,12 +300,12 @@ export default function Home() {
     rightWidth: 320,
     missionHeight: 330,
     bottomTerminalHeight: 240,
-    terminalDock: "right",
   });
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const editorBackdropRef = useRef<HTMLPreElement | null>(null);
   const editorGutterRef = useRef<HTMLDivElement | null>(null);
+  const [showCommandsPanel, setShowCommandsPanel] = useState(false);
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
@@ -358,7 +352,6 @@ export default function Home() {
           missionHeight: parsed.missionHeight ?? current.missionHeight,
           bottomTerminalHeight:
             parsed.bottomTerminalHeight ?? current.bottomTerminalHeight,
-          terminalDock: parsed.terminalDock ?? current.terminalDock,
         }));
       } catch {
         window.localStorage.removeItem(layoutStorageKey);
@@ -518,33 +511,14 @@ export default function Home() {
     if (dragState.type === "terminal-bottom") {
       const nextHeight = clamp(
         dragState.startHeight - (event.clientY - dragState.startY),
-        160,
-        460,
+        120,
+        600,
       );
 
       setLayout((current) => ({
         ...current,
         bottomTerminalHeight: nextHeight,
       }));
-      return;
-    }
-
-    if (dragState.type === "terminal-dock") {
-      const deltaX = event.clientX - dragState.startX;
-      const deltaY = event.clientY - dragState.startY;
-
-      if (Math.abs(deltaY) > Math.abs(deltaX) + 24) {
-        setLayout((current) => ({
-          ...current,
-          terminalDock: "bottom",
-        }));
-      } else if (Math.abs(deltaX) > Math.abs(deltaY) + 24) {
-        setLayout((current) => ({
-          ...current,
-          terminalDock: "right",
-        }));
-      }
-
       return;
     }
 
@@ -576,9 +550,7 @@ export default function Home() {
     document.body.style.cursor =
       dragState.type === "mission" || dragState.type === "terminal-bottom"
         ? "row-resize"
-        : dragState.type === "terminal-dock"
-          ? "move"
-          : "col-resize";
+        : "col-resize";
 
     return () => {
       window.removeEventListener("pointermove", handleDragMove);
@@ -597,18 +569,14 @@ export default function Home() {
   const inspectorStyle = isCompactLayout
     ? undefined
     : {
-        gridTemplateRows:
-          layout.terminalDock === "right"
-            ? `${layout.missionHeight}px 6px minmax(0, 1fr)`
-            : "minmax(0, 1fr)",
+        gridTemplateRows: `${layout.missionHeight}px 6px minmax(0, 1fr)`,
       };
 
-  const workspaceBodyStyle =
-    isCompactLayout || layout.terminalDock !== "bottom"
-      ? undefined
-      : {
-          gridTemplateRows: `minmax(0, 1fr) 6px ${layout.bottomTerminalHeight}px`,
-        };
+  const consoleBodyStyle = isCompactLayout
+    ? undefined
+    : {
+        gridTemplateRows: `6px minmax(0, ${layout.bottomTerminalHeight}px)`,
+      };
 
   const syncEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
     const nextTop = event.currentTarget.scrollTop;
@@ -633,7 +601,7 @@ export default function Home() {
             onClick={() => setOutputTab("terminal")}
             type="button"
           >
-            Terminal
+            Console
           </button>
           <button
             className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
@@ -648,51 +616,6 @@ export default function Home() {
             type="button"
           >
             Problems
-          </button>
-        </div>
-        <div className="dock-row">
-          <span
-            className="dock-handle"
-            onPointerDown={(event) => {
-              if (isCompactLayout) {
-                return;
-              }
-
-              event.preventDefault();
-              setDragState({
-                type: "terminal-dock",
-                startX: event.clientX,
-                startY: event.clientY,
-              });
-            }}
-            role="button"
-            tabIndex={0}
-          >
-            Drag to move
-          </span>
-          <button
-            className={`output-tab ${layout.terminalDock === "right" ? "active" : ""}`}
-            onClick={() =>
-              setLayout((current) => ({
-                ...current,
-                terminalDock: "right",
-              }))
-            }
-            type="button"
-          >
-            Right
-          </button>
-          <button
-            className={`output-tab ${layout.terminalDock === "bottom" ? "active" : ""}`}
-            onClick={() =>
-              setLayout((current) => ({
-                ...current,
-                terminalDock: "bottom",
-              }))
-            }
-            type="button"
-          >
-            Bottom
           </button>
         </div>
       </div>
@@ -758,40 +681,56 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="workspace-body" style={workspaceBodyStyle}>
+        <section className="workspace-body">
           <section className="ide-grid" style={ideGridStyle}>
-          <aside className="sidebar panel-surface">
+            <aside className="sidebar panel-surface">
             <div className="section-label">Explorer</div>
 
             <div className="mission-list">
-              {challenges.map((challenge, index) => {
-                const unlocked = canOpenChallenge(index);
-                const complete = completedIds.includes(challenge.id);
+              {(() => {
+                const map = new Map<string, typeof challenges>();
 
-                return (
-                  <button
-                    key={challenge.id}
-                    className={`mission-card ${index === activeIndex ? "active" : ""} ${
-                      complete ? "complete" : ""
-                    }`}
-                    disabled={!unlocked}
-                    onClick={() => {
-                      if (unlocked) {
-                        setActiveIndex(index);
-                      }
-                    }}
-                    type="button"
-                  >
-                    <div className="file-row">
-                      <span className="file-icon" />
-                      <strong>{challenge.title}.story</strong>
-                    </div>
-                    <span className="mission-status">
-                      {complete ? "done" : unlocked ? challenge.badge.toLowerCase() : "locked"}
-                    </span>
-                  </button>
-                );
-              })}
+                challenges.forEach((c) => {
+                  const key = c.category ?? "General";
+                  if (!map.has(key)) map.set(key, [] as typeof challenges);
+                  map.get(key)!.push(c);
+                });
+
+                return Array.from(map.entries()).map(([category, items]) => (
+                  <div key={category} style={{ marginBottom: 8 }}>
+                    <div className="section-label">{category}</div>
+                    {items.map((challenge) => {
+                      const index = challenges.findIndex((ch) => ch.id === challenge.id);
+                      const unlocked = canOpenChallenge(index);
+                      const complete = completedIds.includes(challenge.id);
+
+                      return (
+                        <button
+                          key={challenge.id}
+                          className={`mission-card ${index === activeIndex ? "active" : ""} ${
+                            complete ? "complete" : ""
+                          }`}
+                          disabled={!unlocked}
+                          onClick={() => {
+                            if (unlocked) {
+                              setActiveIndex(index);
+                            }
+                          }}
+                          type="button"
+                        >
+                          <div className="file-row">
+                            <span className="file-icon" />
+                            <strong>{challenge.title}.story</strong>
+                          </div>
+                          <span className="mission-status">
+                            {complete ? "done" : unlocked ? challenge.badge.toLowerCase() : "locked"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
             </div>
 
             <div className="sidebar-footer">
@@ -826,7 +765,7 @@ export default function Home() {
             role="separator"
           />
 
-          <section className="editor-column panel-surface">
+            <section className="editor-column panel-surface">
             <div className="editor-toolbar">
               <div className="tab-row">
                 <span className="file-tab active">{activeChallenge.title}.story</span>
@@ -876,7 +815,7 @@ export default function Home() {
                 />
                 <textarea
                   className="editor-input"
-                  placeholder={activeChallenge.placeholder}
+                  placeholder={"Write one action per line."}
                   spellCheck={false}
                   value={program}
                   onChange={(event) => updateProgram(event.target.value)}
@@ -894,7 +833,7 @@ export default function Home() {
                   : celebration || statusLabel}
               </span>
             </div>
-          </section>
+            </section>
 
           <div
             aria-label="Resize side panel"
@@ -914,8 +853,8 @@ export default function Home() {
             role="separator"
           />
 
-          <aside className="inspector-column" style={inspectorStyle}>
-            <div className="panel-surface info-card">
+            <aside className="inspector-column" style={inspectorStyle}>
+              <div className="panel-surface info-card">
               <div className="section-label">Mission</div>
               <div className={`run-status run-status-${runState}`}>
                 <strong>{statusLabel}</strong>
@@ -937,51 +876,32 @@ export default function Home() {
                   <p>{activeChallenge.hint}</p>
                 </div>
               ) : null}
-              <div className="goal-box guide-box">
-                <strong>Allowed commands</strong>
-                <p className="guide-copy">
-                  Use one action per line. You can mix sentence-style commands and simple variable-style lines.
-                </p>
-                <div className="guide-list">
-                  {languageGuide.map((line) => (
-                    <code key={line} className="guide-line">
-                      {line}
-                    </code>
-                  ))}
-                </div>
+                <div className="goal-box guide-box">
+                <button
+                  className="secondary-button"
+                  onClick={() => setShowCommandsPanel((s) => !s)}
+                  type="button"
+                >
+                  {showCommandsPanel ? "Hide reference" : "Command reference"}
+                </button>
+
+                {showCommandsPanel ? (
+                  <div style={{ marginTop: 8 }}>
+                    <p className="guide-copy">Quick syntax reference.</p>
+                    <div className="guide-list">
+                      {languageGuide.map((line) => (
+                        <code key={line} className="guide-line">
+                          {line}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            </div>
+              </div>
 
-            {layout.terminalDock === "right" ? (
-              <>
-                <div
-                  aria-label="Resize mission panel"
-                  className="resize-handle resize-handle-horizontal"
-                  onPointerDown={(event) => {
-                    if (isCompactLayout) {
-                      return;
-                    }
-
-                    event.preventDefault();
-                    setDragState({
-                      type: "mission",
-                      startY: event.clientY,
-                      startHeight: layout.missionHeight,
-                    });
-                  }}
-                  role="separator"
-                />
-                {terminalPanel}
-              </>
-            ) : null}
-          </aside>
-
-          </section>
-
-          {layout.terminalDock === "bottom" ? (
-            <>
               <div
-                aria-label="Resize bottom terminal"
+                aria-label="Resize mission panel"
                 className="resize-handle resize-handle-horizontal"
                 onPointerDown={(event) => {
                   if (isCompactLayout) {
@@ -990,16 +910,36 @@ export default function Home() {
 
                   event.preventDefault();
                   setDragState({
-                    type: "terminal-bottom",
+                    type: "mission",
                     startY: event.clientY,
-                    startHeight: layout.bottomTerminalHeight,
+                    startHeight: layout.missionHeight,
                   });
                 }}
                 role="separator"
               />
-              {terminalPanel}
-            </>
-          ) : null}
+
+              <div className="console-shell" style={consoleBodyStyle}>
+                <div
+                  aria-label="Resize console"
+                  className="resize-handle resize-handle-horizontal console-grab"
+                  onPointerDown={(event) => {
+                    if (isCompactLayout) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    setDragState({
+                      type: "terminal-bottom",
+                      startY: event.clientY,
+                      startHeight: layout.bottomTerminalHeight,
+                    });
+                  }}
+                  role="separator"
+                />
+                {terminalPanel}
+              </div>
+            </aside>
+          </section>
         </section>
       </section>
     </main>
