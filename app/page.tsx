@@ -207,7 +207,10 @@ const lintProgram = (program: string): EditorIssue[] => {
   return issues;
 };
 
-const colorizeLine = (line: string, issueTokens: Set<string>) => {
+const colorizeLine = (
+  line: string,
+  issueMessagesByToken: Map<string, string[]>,
+) => {
   if (!line) {
     return "<span class=\"tok-whitespace\"> </span>";
   }
@@ -240,7 +243,9 @@ const colorizeLine = (line: string, issueTokens: Set<string>) => {
         classes.push("tok-operator");
       }
 
-      if (issueTokens.has(part.toLowerCase())) {
+      const issueMessages = issueMessagesByToken.get(part.toLowerCase());
+
+      if (issueMessages && issueMessages.length > 0) {
         classes.push("tok-error");
       }
 
@@ -248,7 +253,12 @@ const colorizeLine = (line: string, issueTokens: Set<string>) => {
         return escaped;
       }
 
-      return `<span class=\"${classes.join(" ")}\">${escaped}</span>`;
+      const title =
+        issueMessages && issueMessages.length > 0
+          ? ` title=\"${escapeHtml(issueMessages.join(" | "))}\"`
+          : "";
+
+      return `<span${title} class=\"${classes.join(" ")}\">${escaped}</span>`;
     })
     .join("");
 };
@@ -306,6 +316,7 @@ export default function Home() {
   const editorBackdropRef = useRef<HTMLPreElement | null>(null);
   const editorGutterRef = useRef<HTMLDivElement | null>(null);
   const [showCommandsPanel, setShowCommandsPanel] = useState(false);
+  const [successFlash, setSuccessFlash] = useState(false);
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
@@ -313,16 +324,21 @@ export default function Home() {
   const programLines = useMemo(() => program.split(/\r?\n/), [program]);
 
   const highlightedProgram = useMemo(() => {
-    const issueTokensByLine = new Map<number, Set<string>>();
+    const issueTokensByLine = new Map<number, Map<string, string[]>>();
 
     liveIssues.forEach((issue) => {
-      const existing = issueTokensByLine.get(issue.line) ?? new Set<string>();
-      existing.add(issue.token.toLowerCase());
+      const existing = issueTokensByLine.get(issue.line) ?? new Map<string, string[]>();
+      const tokenKey = issue.token.toLowerCase();
+      const messages = existing.get(tokenKey) ?? [];
+      messages.push(issue.message);
+      existing.set(tokenKey, messages);
       issueTokensByLine.set(issue.line, existing);
     });
 
     return programLines
-      .map((line, index) => colorizeLine(line, issueTokensByLine.get(index + 1) ?? new Set<string>()))
+      .map((line, index) =>
+        colorizeLine(line, issueTokensByLine.get(index + 1) ?? new Map<string, string[]>()),
+      )
       .join("\n");
   }, [liveIssues, programLines]);
 
@@ -386,7 +402,22 @@ export default function Home() {
     setCelebration("");
     setShowHint(false);
     setRunState("idle");
+    setSuccessFlash(false);
   }, [activeChallenge]);
+
+  useEffect(() => {
+    if (!successFlash) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSuccessFlash(false);
+    }, 1100);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [successFlash]);
 
   useEffect(() => {
     if (isCompactLayout) {
@@ -423,6 +454,7 @@ export default function Home() {
 
       setCelebration(`Mission complete: ${activeChallenge.title}`);
       setRunState("success");
+      setSuccessFlash(true);
       return;
     }
 
@@ -468,6 +500,7 @@ export default function Home() {
     id: `lint-${index}`,
     line: issue.line,
     message: issue.message,
+    token: issue.token,
   }));
 
   const allProblems = [...lintProblems, ...runtimeProblems];
@@ -593,7 +626,7 @@ export default function Home() {
   };
 
   const terminalPanel = (
-    <div className="panel-surface code-card terminal-panel">
+    <div className={`panel-surface code-card terminal-panel ${successFlash ? "terminal-success" : ""}`}>
       <div className="terminal-topbar">
         <div className="output-tabs">
           <button
@@ -648,12 +681,21 @@ export default function Home() {
       </pre>
       <div className="debug-list">
         {allProblems.length > 0 ? (
-          allProblems.map((problem) => (
-            <p key={problem.id} className="error-line">
-              {problem.line ? `Line ${problem.line}: ` : ""}
-              {problem.message}
-            </p>
-          ))
+          <>
+            <div className="problems-header">
+              <strong>Problems</strong>
+              <span>{allProblems.length} issue{allProblems.length > 1 ? "s" : ""}</span>
+            </div>
+            {allProblems.map((problem) => (
+              <p key={problem.id} className="error-line problem-entry">
+                <span className="problem-bullet">•</span>
+                <span>
+                  {problem.line ? `Line ${problem.line}: ` : ""}
+                  {problem.message}
+                </span>
+              </p>
+            ))}
+          </>
         ) : result.steps.length > 0 ? (
           result.steps.map((step) => <p key={step}>{step}</p>)
         ) : (

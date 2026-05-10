@@ -568,6 +568,10 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.terminal-success {
+  animation: terminal-burst 900ms ease-out;
+}
+
 .console-shell {
   min-height: 0;
   display: grid;
@@ -660,6 +664,41 @@ textarea {
   font-size: 12px;
 }
 
+.problems-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: #f7f9fc;
+  color: var(--text);
+}
+
+.problems-header strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.problems-header span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.problem-entry {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.problem-bullet {
+  color: var(--error);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .debug-list p {
   margin: 0 0 6px;
 }
@@ -667,6 +706,54 @@ textarea {
 .error-line {
   color: var(--error);
   font-weight: 600;
+}
+
+.tok-error {
+  text-decoration: underline wavy #d1242f;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+@keyframes terminal-burst {
+  0% {
+    transform: scale(0.995);
+    box-shadow: 0 0 0 rgba(26, 127, 55, 0);
+  }
+  35% {
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(26, 127, 55, 0.18);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(26, 127, 55, 0);
+  }
+}
+
+@keyframes success-pulse {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.editor-footer .footer-status-success {
+  animation: success-pulse 900ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-success,
+  .editor-footer .footer-status-success {
+    animation: none;
+  }
 }
 
 @media (max-width: 1180px) {
