@@ -6,6 +6,7 @@ import { runStoryProgram, type StoryResult } from "@/lib/story-runtime";
 
 const completionStorageKey = "story-code-lab-progress";
 const layoutStorageKey = "story-code-lab-layout";
+const assistStorageKey = "story-code-lab-scratch-assist";
 
 const defaultResult: StoryResult = {
   generatedCode: [],
@@ -16,56 +17,22 @@ const defaultResult: StoryResult = {
   lineCount: 0,
 };
 
-const assistStorageKey = "story-code-lab-scratch-assist";
-
-type GuideEntry = {
-  scratch: string;
-  python: string;
-  note: string;
-};
-
-const languageGuide: GuideEntry[] = [
-  {
-    scratch: 'say "Hello!"',
-    python: 'print("Hello!")',
-    note: "Friendly output for beginners.",
-  },
-  {
-    scratch: "repeat 3 times\n  say \"beep\"",
-    python: "for i in range(3):\n    print(\"beep\")",
-    note: "Use repeat blocks now, loops later.",
-  },
-  {
-    scratch: "make a number called score with 10",
-    python: "score = 10",
-    note: "A simple variable with a name.",
-  },
-  {
-    scratch: "change score by 1",
-    python: "score += 1",
-    note: "Quick way to grow a number.",
-  },
-  {
-    scratch: "make a list called backpack with \"map\", \"snack\", \"rope\"",
-    python: "backpack = [\"map\", \"snack\", \"rope\"]",
-    note: "Lists hold multiple items.",
-  },
-  {
-    scratch: "add \"flashlight\" to backpack",
-    python: "backpack.append(\"flashlight\")",
-    note: "Adds one new item to a list.",
-  },
-  {
-    scratch: "set total to sum of nums",
-    python: "total = sum(nums)",
-    note: "Built-in helper for totals.",
-  },
-  {
-    scratch: "set tallest to biggest number in heights",
-    python: "tallest = max(heights)",
-    note: "Find the biggest value fast.",
-  },
+const languageGuide = [
+  'say "Hello!"',
+  "repeat 3 times\n  say \"beep\"",
+  "make a number called score with 10",
+  "change score by 1",
+  'make a list called backpack with "map", "snack", "rope"',
+  'add "flashlight" to backpack',
+  "set total to sum of nums",
+  "set tallest to biggest number in heights",
 ];
+
+type EditorIssue = {
+  line: number;
+  token: string;
+  message: string;
+};
 
 type AutocompleteSnippet = {
   description: string;
@@ -79,25 +46,19 @@ const autocompleteSnippets: AutocompleteSnippet[] = [
     trigger: "say",
     label: 'say "..."',
     snippet: 'say "<>"',
-    description: "Make the screen talk in a Scratch-style way.",
-  },
-  {
-    trigger: "show",
-    label: "show value",
-    snippet: "show <>total",
-    description: "Print a variable, number, or list.",
+    description: "Make the screen say something.",
   },
   {
     trigger: "repeat",
     label: "repeat block",
     snippet: 'repeat <>3 times\n  say "beep"',
-    description: "Create a small loop block with indentation.",
+    description: "Create a simple repeat block.",
   },
   {
     trigger: "make a list",
     label: "make list",
     snippet: 'make a list called <>items with "map", "snack", "rope"',
-    description: "Start a list of items.",
+    description: "Create a list with several items.",
   },
   {
     trigger: "make a number",
@@ -121,15 +82,9 @@ const autocompleteSnippets: AutocompleteSnippet[] = [
     trigger: "add",
     label: "add to list",
     snippet: 'add <>"flashlight" to backpack',
-    description: "Add a new item into a list.",
+    description: "Add an item to a list.",
   },
 ];
-
-type EditorIssue = {
-  line: number;
-  token: string;
-  message: string;
-};
 
 const commandKeywords = new Set([
   "make",
@@ -148,7 +103,16 @@ const commandKeywords = new Set([
   "say",
 ]);
 
-const typeKeywords = new Set(["list", "array", "number", "word", "text", "string", "boolean", "flag"]);
+const typeKeywords = new Set([
+  "list",
+  "array",
+  "number",
+  "word",
+  "text",
+  "string",
+  "boolean",
+  "flag",
+]);
 
 const expressionKeywords = new Set([
   "called",
@@ -180,7 +144,8 @@ const expressionKeywords = new Set([
   "and",
 ]);
 
-const arithmeticTokenPattern = /"[^"]*"|'[^']*'|\b-?\d+(?:\.\d+)?\b|[a-zA-Z_][\w]*|[+\-*/]/g;
+const arithmeticTokenPattern =
+  /"[^"]*"|'[^']*'|\b-?\d+(?:\.\d+)?\b|[a-zA-Z_][\w]*|[+\-*/]/g;
 
 const isArithmeticOperator = (token: string) =>
   token === "+" || token === "-" || token === "*" || token === "/";
@@ -190,7 +155,8 @@ const isKnownValueToken = (token: string, knownNames: Set<string>) =>
   /^"[^"]*"$|^'[^']*'$/.test(token) ||
   knownNames.has(token.toLowerCase());
 
-const normalizeEditorName = (value: string) => value.trim().replace(/\s+/g, "_");
+const normalizeEditorName = (value: string) =>
+  value.trim().replace(/\s+/g, "_");
 
 const escapeHtml = (value: string) =>
   value
@@ -203,7 +169,9 @@ const escapeHtml = (value: string) =>
 const editDistance = (a: string, b: string) => {
   const rows = a.length + 1;
   const cols = b.length + 1;
-  const table = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
+  const table = Array.from({ length: rows }, () =>
+    Array<number>(cols).fill(0),
+  );
 
   for (let i = 0; i < rows; i += 1) {
     table[i][0] = i;
@@ -264,11 +232,18 @@ const getSnippetMatch = (linePrefix: string) => {
     return null;
   }
 
-  return matches.sort((left, right) => left.trigger.length - right.trigger.length)[0];
+  return matches.sort(
+    (left, right) => left.trigger.length - right.trigger.length,
+  )[0];
 };
 
-const getLineRange = (value: string, selectionStart: number, selectionEnd: number) => {
-  const lineStart = value.lastIndexOf("\n", Math.max(selectionStart - 1, 0)) + 1;
+const getLineRange = (
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+) => {
+  const lineStart =
+    value.lastIndexOf("\n", Math.max(selectionStart - 1, 0)) + 1;
   const nextBreak = value.indexOf("\n", selectionEnd);
   const lineEnd = nextBreak === -1 ? value.length : nextBreak;
 
@@ -309,7 +284,11 @@ const applyAutocomplete = (
   selectionStart: number,
   selectionEnd: number,
 ) => {
-  const { lineEnd, lineStart } = getLineRange(value, selectionStart, selectionEnd);
+  const { lineEnd, lineStart } = getLineRange(
+    value,
+    selectionStart,
+    selectionEnd,
+  );
   const fullLine = value.slice(lineStart, lineEnd);
   const beforeCaret = value.slice(lineStart, selectionStart);
   const snippet = getSnippetMatch(beforeCaret);
@@ -323,12 +302,12 @@ const applyAutocomplete = (
   const caretOffset = expandedSnippet.indexOf("<>");
   const completedLine = stripCaretMarker(expandedSnippet);
   const nextValue = `${value.slice(0, lineStart)}${completedLine}${value.slice(lineEnd)}`;
-  const nextCaret = lineStart + (caretOffset === -1 ? completedLine.length : caretOffset);
+  const nextCaret =
+    lineStart + (caretOffset === -1 ? completedLine.length : caretOffset);
 
   return {
     nextCaret,
     nextValue,
-    snippet,
   };
 };
 
@@ -340,7 +319,9 @@ const lintProgram = (program: string): EditorIssue[] => {
 
   lines.forEach((rawLine, index) => {
     const trimmed = rawLine.trim();
-    const indent = (rawLine.match(/^\s*/) ?? [""])[0].replace(/\t/g, "  ").length;
+    const indent = (rawLine.match(/^\s*/) ?? [""])[0]
+      .replace(/\t/g, "  ")
+      .length;
 
     if (!trimmed) {
       return;
@@ -431,12 +412,16 @@ const lintProgram = (program: string): EditorIssue[] => {
     }
 
     const assignMatch = trimmed.match(/^([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/);
+
     if (assignMatch) {
       knownNames.add(normalizeEditorName(assignMatch[1]));
     }
 
     if (["show", "print"].includes(lowerFirst)) {
-      const expression = trimmed.replace(/^(show|print)\s*/i, "").replace(/^\((.+)\)$/i, "$1").trim();
+      const expression = trimmed
+        .replace(/^(show|print)\s*/i, "")
+        .replace(/^\((.+)\)$/i, "$1")
+        .trim();
       const expressionTokens = expression.match(arithmeticTokenPattern) ?? [];
 
       if (expressionTokens.some(isArithmeticOperator)) {
@@ -534,7 +519,8 @@ const colorizeLine = (
     return "<span class=\"tok-whitespace\"> </span>";
   }
 
-  const tokenPattern = /(\s+|"[^"]*"|'[^']*'|\b\d+(?:\.\d+)?\b|[a-zA-Z_][\w-]*|==|=|\[|\]|\(|\)|,|\.|:|;|\+|-|\*|\/)/g;
+  const tokenPattern =
+    /(\s+|"[^"]*"|'[^']*'|\b\d+(?:\.\d+)?\b|[a-zA-Z_][\w-]*|==|=|\[|\]|\(|\)|,|\.|:|;|\+|-|\*|\/)/g;
   const parts = line.split(tokenPattern).filter((part) => part.length > 0);
 
   return parts
@@ -588,7 +574,6 @@ type LayoutState = {
   leftWidth: number;
   rightWidth: number;
   missionHeight: number;
-  bottomTerminalHeight: number;
 };
 
 type DragState =
@@ -606,38 +591,33 @@ type DragState =
       type: "mission";
       startY: number;
       startHeight: number;
-    }
-  | {
-      type: "terminal-bottom";
-      startY: number;
-      startHeight: number;
     };
 
 export default function Home() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(challenges.map((challenge) => [challenge.id, challenge.starter])),
+    Object.fromEntries(
+      challenges.map((challenge) => [challenge.id, challenge.starter]),
+    ),
   );
   const [result, setResult] = useState<StoryResult>(defaultResult);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [celebration, setCelebration] = useState("");
   const [showHint, setShowHint] = useState(false);
-  const [outputTab, setOutputTab] = useState<"terminal" | "javascript" | "problems">("terminal");
+  const [outputTab, setOutputTab] = useState<
+    "terminal" | "javascript" | "problems"
+  >("terminal");
   const [runState, setRunState] = useState<RunState>("idle");
   const [layout, setLayout] = useState<LayoutState>({
     leftWidth: 220,
     rightWidth: 320,
     missionHeight: 330,
-    bottomTerminalHeight: 240,
   });
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const editorBackdropRef = useRef<HTMLPreElement | null>(null);
   const editorGutterRef = useRef<HTMLDivElement | null>(null);
   const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const [showCommandsPanel, setShowCommandsPanel] = useState(false);
-  const [successFlash, setSuccessFlash] = useState(false);
-  const [showTutorialCard, setShowTutorialCard] = useState(true);
   const [scratchAssistEnabled, setScratchAssistEnabled] = useState(true);
   const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0 });
 
@@ -657,9 +637,11 @@ export default function Home() {
     const issueTokensByLine = new Map<number, Map<string, string[]>>();
 
     liveIssues.forEach((issue) => {
-      const existing = issueTokensByLine.get(issue.line) ?? new Map<string, string[]>();
+      const existing =
+        issueTokensByLine.get(issue.line) ?? new Map<string, string[]>();
       const tokenKey = issue.token.toLowerCase();
       const messages = existing.get(tokenKey) ?? [];
+
       messages.push(issue.message);
       existing.set(tokenKey, messages);
       issueTokensByLine.set(issue.line, existing);
@@ -667,7 +649,10 @@ export default function Home() {
 
     return programLines
       .map((line, index) =>
-        colorizeLine(line, issueTokensByLine.get(index + 1) ?? new Map<string, string[]>()),
+        colorizeLine(
+          line,
+          issueTokensByLine.get(index + 1) ?? new Map<string, string[]>(),
+        ),
       )
       .join("\n");
   }, [liveIssues, programLines]);
@@ -704,8 +689,6 @@ export default function Home() {
           leftWidth: parsed.leftWidth ?? current.leftWidth,
           rightWidth: parsed.rightWidth ?? current.rightWidth,
           missionHeight: parsed.missionHeight ?? current.missionHeight,
-          bottomTerminalHeight:
-            parsed.bottomTerminalHeight ?? current.bottomTerminalHeight,
         }));
       } catch {
         window.localStorage.removeItem(layoutStorageKey);
@@ -747,24 +730,8 @@ export default function Home() {
     setCelebration("");
     setShowHint(false);
     setRunState("idle");
-    setSuccessFlash(false);
-    setShowCommandsPanel(false);
     setEditorSelection({ start: 0, end: 0 });
   }, [activeChallenge]);
-
-  useEffect(() => {
-    if (!successFlash) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setSuccessFlash(false);
-    }, 1100);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [successFlash]);
 
   useEffect(() => {
     if (isCompactLayout) {
@@ -821,7 +788,9 @@ export default function Home() {
     updateProgramAndSelection(nextValue, nextCaret);
   };
 
-  const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleEditorKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
     const target = event.currentTarget;
 
     if (event.key === "Tab") {
@@ -845,10 +814,18 @@ export default function Home() {
     }
 
     if (event.key === "Enter") {
-      const { lineStart } = getLineRange(program, target.selectionStart, target.selectionEnd);
+      const { lineStart } = getLineRange(
+        program,
+        target.selectionStart,
+        target.selectionEnd,
+      );
       const currentLine = program.slice(lineStart, target.selectionStart);
       const currentIndent = (currentLine.match(/^\s*/) ?? [""])[0];
-      const extraIndent = /^repeat .+ times\s*:?\s*$/i.test(currentLine.trim()) ? "  " : "";
+      const extraIndent = /^repeat .+ times\s*:?\s*$/i.test(
+        currentLine.trim(),
+      )
+        ? "  "
+        : "";
 
       event.preventDefault();
       insertAtSelection(`\n${currentIndent}${extraIndent}`, target);
@@ -873,16 +850,6 @@ export default function Home() {
 
       setCelebration(`Mission complete: ${activeChallenge.title}`);
       setRunState("success");
-      setSuccessFlash(true);
-
-      const nextChallengeIndex = Math.min(activeIndex + 1, challenges.length - 1);
-
-      if (nextChallengeIndex > activeIndex) {
-        setTimeout(() => {
-          setActiveIndex(nextChallengeIndex);
-        }, 350);
-      }
-
       return;
     }
 
@@ -928,7 +895,6 @@ export default function Home() {
     id: `lint-${index}`,
     line: issue.line,
     message: issue.message,
-    token: issue.token,
   }));
 
   const allProblems = [...lintProblems, ...runtimeProblems];
@@ -969,20 +935,6 @@ export default function Home() {
       return;
     }
 
-    if (dragState.type === "terminal-bottom") {
-      const nextHeight = clamp(
-        dragState.startHeight - (event.clientY - dragState.startY),
-        120,
-        600,
-      );
-
-      setLayout((current) => ({
-        ...current,
-        bottomTerminalHeight: nextHeight,
-      }));
-      return;
-    }
-
     const maxMissionHeight = Math.max(220, window.innerHeight - 240);
     const nextHeight = clamp(
       dragState.startHeight + (event.clientY - dragState.startY),
@@ -1009,9 +961,7 @@ export default function Home() {
     window.addEventListener("pointerup", handlePointerUp);
     document.body.style.userSelect = "none";
     document.body.style.cursor =
-      dragState.type === "mission" || dragState.type === "terminal-bottom"
-        ? "row-resize"
-        : "col-resize";
+      dragState.type === "mission" ? "row-resize" : "col-resize";
 
     return () => {
       window.removeEventListener("pointermove", handleDragMove);
@@ -1033,12 +983,6 @@ export default function Home() {
         gridTemplateRows: `${layout.missionHeight}px 6px minmax(0, 1fr)`,
       };
 
-  const consoleBodyStyle = isCompactLayout
-    ? undefined
-    : {
-        gridTemplateRows: `6px minmax(0, ${layout.bottomTerminalHeight}px)`,
-      };
-
   const syncEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
     const nextTop = event.currentTarget.scrollTop;
     const nextLeft = event.currentTarget.scrollLeft;
@@ -1053,166 +997,6 @@ export default function Home() {
     }
   };
 
-  const terminalPanel = (
-    <div className={`panel-surface code-card terminal-panel ${successFlash ? "terminal-success" : ""}`}>
-      <div className="terminal-topbar">
-        <div className="output-tabs">
-          <button
-            className={`output-tab ${outputTab === "terminal" ? "active" : ""}`}
-            onClick={() => setOutputTab("terminal")}
-            type="button"
-          >
-            Console
-          </button>
-          <button
-            className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
-            onClick={() => setOutputTab("javascript")}
-            type="button"
-          >
-            JavaScript
-          </button>
-          <button
-            className={`output-tab ${outputTab === "problems" ? "active" : ""}`}
-            onClick={() => setOutputTab("problems")}
-            type="button"
-          >
-            Problems
-          </button>
-        </div>
-      </div>
-      <pre className="code-view">
-        {outputTab === "terminal"
-          ? result.output.length > 0
-            ? [`$ run ${activeChallenge.title}.story`, ...result.output].join("\n")
-            : "$ Run your code to see output."
-          : result.generatedCode.length > 0
-            ? outputTab === "javascript"
-              ? result.generatedCode.join("\n")
-              : allProblems
-                  .map((problem) =>
-                    problem.line
-                      ? `Line ${problem.line}: ${problem.message}`
-                      : problem.message,
-                  )
-                  .join("\n")
-            : outputTab === "javascript"
-              ? "// Translated JavaScript will appear here."
-              : allProblems.length > 0
-                ? allProblems
-                    .map((problem) =>
-                      problem.line
-                        ? `Line ${problem.line}: ${problem.message}`
-                        : problem.message,
-                    )
-                    .join("\n")
-                : "No problems found."}
-      </pre>
-      <div className="debug-list">
-        {allProblems.length > 0 ? (
-          <>
-            <div className="problems-header">
-              <strong>Problems</strong>
-              <span>{allProblems.length} issue{allProblems.length > 1 ? "s" : ""}</span>
-            </div>
-            {allProblems.map((problem) => (
-              <p key={problem.id} className="error-line problem-entry">
-                <span className="problem-bullet">•</span>
-                <span>
-                  {problem.line ? `Line ${problem.line}: ` : ""}
-                  {problem.message}
-                </span>
-              </p>
-            ))}
-          </>
-        ) : result.steps.length > 0 ? (
-          result.steps.map((step) => <p key={step}>{step}</p>)
-        ) : (
-          <p>Status messages will appear here after you run the mission.</p>
-        )}
-      </div>
-    </div>
-  );
-
-  const commandReferencePanel = showCommandsPanel ? (
-    <div className="command-popout" role="dialog" aria-label="Command reference">
-      <div className="command-popout-header">
-        <strong>Scratch To Python Guide</strong>
-        <button
-          className="secondary-button"
-          onClick={() => setShowCommandsPanel(false)}
-          type="button"
-        >
-          Close
-        </button>
-      </div>
-      <p className="guide-copy">
-        Use the Scratch-style version on the left. The Python version is there so kids can see
-        where they are heading next.
-      </p>
-      <div className="guide-list">
-        {languageGuide.map((entry) => (
-          <div key={entry.scratch} className="guide-card">
-            <div>
-              <span className="guide-label">Scratch-style now</span>
-              <code className="guide-line">{entry.scratch}</code>
-            </div>
-            <div>
-              <span className="guide-label">Python later</span>
-              <code className="guide-line">{entry.python}</code>
-            </div>
-            <p className="guide-note">{entry.note}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  ) : null;
-
-  const tutorialPanel = showTutorialCard ? (
-    <div className="tutorial-banner" role="region" aria-label="Tutorial">
-      <div className="tutorial-badge">Start Here</div>
-      <div className="tutorial-content">
-        <h2>Scratch first, Python next</h2>
-        <p>
-          This game starts with easy commands like <code>say</code> and <code>repeat 3 times</code>,
-          then slowly points toward real Python. Read the mission, type one idea at a time, and run it.
-        </p>
-        <div className="tutorial-steps">
-          <div className="tutorial-step">
-            <strong>1. Read the mission</strong>
-            <span>Each level gives you a small job with a clear goal.</span>
-          </div>
-          <div className="tutorial-step">
-            <strong>2. Type your code</strong>
-            <span>Try kid-friendly commands like say, repeat, make, set, and change.</span>
-          </div>
-          <div className="tutorial-step">
-            <strong>3. Run and check</strong>
-            <span>The console and Problems tab explain what worked and what needs fixing.</span>
-          </div>
-        </div>
-      </div>
-      <div className="tutorial-actions">
-        <button className="primary-button" onClick={() => setActiveIndex(0)} type="button">
-          Start Tutorial
-        </button>
-        <button
-          className="secondary-button"
-          onClick={() => setShowCommandsPanel(true)}
-          type="button"
-        >
-          Open syntax guide
-        </button>
-        <button
-          className="secondary-button"
-          onClick={() => setShowTutorialCard(false)}
-          type="button"
-        >
-          Skip for now
-        </button>
-      </div>
-    </div>
-  ) : null;
-
   return (
     <main className="app-shell">
       <section className="ide-window">
@@ -1225,48 +1009,50 @@ export default function Home() {
           </div>
 
           <div className="topbar-stats">
-            <span>Mission {activeIndex + 1} of {challenges.length}</span>
+            <span>
+              Mission {activeIndex + 1} of {challenges.length}
+            </span>
             <span>{completedCount} cleared</span>
             <span>{progressPercent}% progress</span>
           </div>
         </header>
 
-        {tutorialPanel}
-
-        <section className="workspace-body">
-          <section className="ide-grid" style={ideGridStyle}>
-            <aside className="sidebar panel-surface">
-            <div className="section-label section-label-accent">Explorer</div>
-
-            <div className="explorer-note">
-              <strong>Choose a path</strong>
-              <span>Start small, clear each mission, and unlock the next one like a game map.</span>
-            </div>
+        <section className="ide-grid" style={ideGridStyle}>
+          <aside className="sidebar panel-surface">
+            <div className="section-label">Explorer</div>
 
             <div className="mission-list">
               {(() => {
                 const map = new Map<string, typeof challenges>();
 
-                challenges.forEach((c) => {
-                  const key = c.category ?? "General";
-                  if (!map.has(key)) map.set(key, [] as typeof challenges);
-                  map.get(key)!.push(c);
+                challenges.forEach((challenge) => {
+                  const key = challenge.category ?? "General";
+
+                  if (!map.has(key)) {
+                    map.set(key, [] as typeof challenges);
+                  }
+
+                  map.get(key)!.push(challenge);
                 });
 
                 return Array.from(map.entries()).map(([category, items]) => (
-                  <div key={category} style={{ marginBottom: 8 }}>
-                    <div className="section-label section-label-category">{category}</div>
+                  <div key={category}>
+                    <div className="section-label section-label-category">
+                      {category}
+                    </div>
                     {items.map((challenge) => {
-                      const index = challenges.findIndex((ch) => ch.id === challenge.id);
+                      const index = challenges.findIndex(
+                        (entry) => entry.id === challenge.id,
+                      );
                       const unlocked = canOpenChallenge(index);
                       const complete = completedIds.includes(challenge.id);
 
                       return (
                         <button
                           key={challenge.id}
-                          className={`mission-card ${index === activeIndex ? "active" : ""} ${
-                            complete ? "complete" : ""
-                          }`}
+                          className={`mission-card ${
+                            index === activeIndex ? "active" : ""
+                          } ${complete ? "complete" : ""}`}
                           disabled={!unlocked}
                           onClick={() => {
                             if (unlocked) {
@@ -1276,15 +1062,19 @@ export default function Home() {
                           type="button"
                         >
                           <div className="file-row">
-                            <span className={`file-icon file-icon-${category.toLowerCase().replace(/[^a-z]/g, "-")}`} />
+                            <span
+                              className={`file-icon file-icon-${category
+                                .toLowerCase()
+                                .replace(/[^a-z]/g, "-")}`}
+                            />
                             <strong>{challenge.title}.story</strong>
                           </div>
-                          <div className="mission-pill-row">
-                            <span className="mission-pill">{challenge.badge}</span>
-                            <span className="mission-pill mission-pill-secondary">{category}</span>
-                          </div>
                           <span className="mission-status">
-                            {complete ? "done" : unlocked ? challenge.badge.toLowerCase() : "locked"}
+                            {complete
+                              ? "done"
+                              : unlocked
+                                ? challenge.badge.toLowerCase()
+                                : "locked"}
                           </span>
                         </button>
                       );
@@ -1295,7 +1085,7 @@ export default function Home() {
             </div>
 
             <div className="sidebar-footer">
-              <div className="section-label section-label-accent">Progress</div>
+              <div className="section-label">Progress</div>
               <div className="sidebar-progress">
                 <div className="progress-bar">
                   <div
@@ -1303,7 +1093,9 @@ export default function Home() {
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
-                <span>{completedCount} / {challenges.length} missions</span>
+                <span>
+                  {completedCount} / {challenges.length} missions
+                </span>
               </div>
             </div>
           </aside>
@@ -1326,18 +1118,13 @@ export default function Home() {
             role="separator"
           />
 
-            <section className="editor-column panel-surface">
+          <section className="editor-column panel-surface">
             <div className="editor-toolbar">
               <div className="tab-row">
-                <span className="file-tab active">{activeChallenge.title}.story</span>
+                <span className="file-tab active">
+                  {activeChallenge.title}.story
+                </span>
                 <span className="file-tab muted">console.txt</span>
-                <button
-                  className={`file-tab command-tab ${showCommandsPanel ? "active" : ""}`}
-                  onClick={() => setShowCommandsPanel((current) => !current)}
-                  type="button"
-                >
-                  Syntax guide
-                </button>
               </div>
 
               <div className="action-row">
@@ -1352,7 +1139,9 @@ export default function Home() {
                   {showHint ? "Hide hint" : "Need a hint?"}
                 </button>
                 <button
-                  className={`secondary-button ${scratchAssistEnabled ? "mode-button-active" : ""}`}
+                  className={`secondary-button ${
+                    scratchAssistEnabled ? "mode-button-active" : ""
+                  }`}
                   onClick={() => setScratchAssistEnabled((current) => !current)}
                   type="button"
                 >
@@ -1374,26 +1163,6 @@ export default function Home() {
               <span>{statusLabel}</span>
             </div>
 
-            <div className="lesson-strip">
-              <strong>Today&apos;s lesson</strong>
-              <span>
-                {activeIndex === 0
-                  ? "Start with say and simple messages. You do not need perfect Python on day one."
-                  : `Mission ${activeIndex + 1} builds on the one before it. Scratch-style code is allowed here.`}
-              </span>
-            </div>
-
-            {scratchAssistEnabled ? (
-              <div className="assist-strip">
-                <strong>Scratch assist</strong>
-                <span>
-                  {autocompletePreview
-                    ? `Press Tab to complete: ${autocompletePreview.preview}`
-                    : "Press Tab to autocomplete commands like say, repeat, make a list, or change score by 1."}
-                </span>
-              </div>
-            ) : null}
-
             <div className="editor-shell">
               <div className="editor-gutter" ref={editorGutterRef} aria-hidden="true">
                 {Array.from({ length: editorLineCount }, (_, index) => (
@@ -1410,7 +1179,7 @@ export default function Home() {
                 />
                 <textarea
                   className="editor-input"
-                  placeholder={"Write one action per line. Try: say \"Hello!\""}
+                  placeholder={activeChallenge.placeholder}
                   ref={editorInputRef}
                   spellCheck={false}
                   value={program}
@@ -1429,14 +1198,22 @@ export default function Home() {
 
             <div className="editor-footer">
               <span>{lineCount} lines</span>
-              <span>{showHint ? activeChallenge.hint : "Tip is tucked away."}</span>
+              <span>
+                {showHint
+                  ? activeChallenge.hint
+                  : scratchAssistEnabled && autocompletePreview
+                    ? `Tab completes: ${autocompletePreview.preview}`
+                    : scratchAssistEnabled
+                      ? "Tab autocompletes Scratch-style commands."
+                      : "Hint is hidden."}
+              </span>
               <span className={`footer-status footer-status-${runState}`}>
                 {allProblems.length > 0
                   ? `${allProblems.length} problem${allProblems.length > 1 ? "s" : ""}`
                   : celebration || statusLabel}
               </span>
             </div>
-            </section>
+          </section>
 
           <div
             aria-label="Resize side panel"
@@ -1456,8 +1233,8 @@ export default function Home() {
             role="separator"
           />
 
-            <aside className="inspector-column" style={inspectorStyle}>
-              <div className="panel-surface info-card">
+          <aside className="inspector-column" style={inspectorStyle}>
+            <div className="panel-surface info-card">
               <div className="section-label">Mission</div>
               <div className={`run-status run-status-${runState}`}>
                 <strong>{statusLabel}</strong>
@@ -1480,55 +1257,106 @@ export default function Home() {
                 </div>
               ) : null}
               <div className="goal-box guide-box">
-                <strong>Bridge to Python</strong>
+                <strong>Allowed commands</strong>
                 <p className="guide-copy">
-                  Use Scratch-style commands here. Open the syntax guide to compare them with Python.
+                  Scratch-style syntax is allowed here. Use Tab to finish commands faster.
                 </p>
+                <div className="guide-list">
+                  {languageGuide.map((line) => (
+                    <code key={line} className="guide-line">
+                      {line}
+                    </code>
+                  ))}
+                </div>
               </div>
+            </div>
+
+            <div
+              aria-label="Resize mission panel"
+              className="resize-handle resize-handle-horizontal"
+              onPointerDown={(event) => {
+                if (isCompactLayout) {
+                  return;
+                }
+
+                event.preventDefault();
+                setDragState({
+                  type: "mission",
+                  startY: event.clientY,
+                  startHeight: layout.missionHeight,
+                });
+              }}
+              role="separator"
+            />
+
+            <div className="panel-surface code-card">
+              <div className="output-tabs">
+                <button
+                  className={`output-tab ${outputTab === "terminal" ? "active" : ""}`}
+                  onClick={() => setOutputTab("terminal")}
+                  type="button"
+                >
+                  Terminal
+                </button>
+                <button
+                  className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
+                  onClick={() => setOutputTab("javascript")}
+                  type="button"
+                >
+                  JavaScript
+                </button>
+                <button
+                  className={`output-tab ${outputTab === "problems" ? "active" : ""}`}
+                  onClick={() => setOutputTab("problems")}
+                  type="button"
+                >
+                  Problems
+                </button>
               </div>
-
-              <div
-                aria-label="Resize mission panel"
-                className="resize-handle resize-handle-horizontal"
-                onPointerDown={(event) => {
-                  if (isCompactLayout) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  setDragState({
-                    type: "mission",
-                    startY: event.clientY,
-                    startHeight: layout.missionHeight,
-                  });
-                }}
-                role="separator"
-              />
-
-              <div className="console-shell" style={consoleBodyStyle}>
-                <div
-                  aria-label="Resize console"
-                  className="resize-handle resize-handle-horizontal console-grab"
-                  onPointerDown={(event) => {
-                    if (isCompactLayout) {
-                      return;
-                    }
-
-                    event.preventDefault();
-                    setDragState({
-                      type: "terminal-bottom",
-                      startY: event.clientY,
-                      startHeight: layout.bottomTerminalHeight,
-                    });
-                  }}
-                  role="separator"
-                />
-                {terminalPanel}
+              <pre className="code-view">
+                {outputTab === "terminal"
+                  ? result.output.length > 0
+                    ? [`$ run ${activeChallenge.title}.story`, ...result.output].join("\n")
+                    : "$ Run your code to see output."
+                  : result.generatedCode.length > 0
+                    ? outputTab === "javascript"
+                      ? result.generatedCode.join("\n")
+                      : allProblems
+                          .map((problem) =>
+                            problem.line
+                              ? `Line ${problem.line}: ${problem.message}`
+                              : problem.message,
+                          )
+                          .join("\n")
+                    : outputTab === "javascript"
+                      ? "// Translated JavaScript will appear here."
+                      : allProblems.length > 0
+                        ? allProblems
+                            .map((problem) =>
+                              problem.line
+                                ? `Line ${problem.line}: ${problem.message}`
+                                : problem.message,
+                            )
+                            .join("\n")
+                        : "No problems found."}
+              </pre>
+              <div className="debug-list">
+                {allProblems.length > 0 ? (
+                  allProblems.map((problem) => (
+                    <p key={problem.id} className="error-line">
+                      {problem.line ? `Line ${problem.line}: ` : ""}
+                      {problem.message}
+                    </p>
+                  ))
+                ) : result.steps.length > 0 ? (
+                  result.steps.map((step) => <p key={step}>{step}</p>)
+                ) : (
+                  <p>Status messages will appear here after you run the mission.</p>
+                )}
               </div>
-            </aside>
-          </section>
+            </div>
+          </aside>
         </section>
-        {commandReferencePanel}
       </section>
     </main>
   );
