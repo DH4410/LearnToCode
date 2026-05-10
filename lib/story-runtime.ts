@@ -9,6 +9,20 @@ export type StoryResult = {
   lineCount: number;
 };
 
+type ParsedLine = {
+  indent: number;
+  lineNumber: number;
+  text: string;
+};
+
+type RuntimeContext = {
+  generatedCode: string[];
+  output: string[];
+  variables: Record<string, StoryValue>;
+  steps: string[];
+  errors: string[];
+};
+
 const defineOrAssign = (
   variables: Record<string, StoryValue>,
   variableName: string,
@@ -29,7 +43,8 @@ const stripQuotes = (value: string) => value.slice(1, -1);
 const splitTopLevel = (source: string): string[] => {
   const parts: string[] = [];
   let current = "";
-  let depth = 0;
+  let squareDepth = 0;
+  let roundDepth = 0;
   let quote: '"' | "'" | null = null;
 
   for (const char of source) {
@@ -50,18 +65,30 @@ const splitTopLevel = (source: string): string[] => {
     }
 
     if (char === "[") {
-      depth += 1;
+      squareDepth += 1;
       current += char;
       continue;
     }
 
     if (char === "]") {
-      depth = Math.max(0, depth - 1);
+      squareDepth = Math.max(0, squareDepth - 1);
       current += char;
       continue;
     }
 
-    if (char === "," && depth === 0) {
+    if (char === "(") {
+      roundDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ")") {
+      roundDepth = Math.max(0, roundDepth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === "," && squareDepth === 0 && roundDepth === 0) {
       parts.push(current.trim());
       current = "";
       continue;
@@ -150,67 +177,100 @@ const getList = (value: StoryValue, label: string): StoryValue[] => {
     return value;
   }
 
-      throw new Error(`${label} should be a list.`);
+  throw new Error(`${label} should be a list.`);
 };
 
-const parseValueByKind = (
-  kind: string,
-  rawValue: string,
-  variableName: string,
-): StoryValue => {
-  if (kind === "list" || kind === "array") {
-    if (rawValue.trim().startsWith("[") && rawValue.trim().endsWith("]")) {
-      const parsed = parseLiteral(rawValue);
+const findBalancedClosingParen = (value: string) => {
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
 
-      if (Array.isArray(parsed)) {
-        return parsed;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ")") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return index;
       }
     }
-
-    return parseList(rawValue);
   }
 
-  if (kind === "number") {
-    return getNumber(parseLiteral(rawValue), variableName);
-  }
+  return -1;
+};
 
-  if (kind === "boolean" || kind === "flag") {
-    const parsed = parseLiteral(rawValue);
+const unwrapOuterParens = (value: string): string => {
+  let trimmed = value.trim();
 
-    if (typeof parsed !== "boolean") {
-      throw new Error(`${variableName} should be true or false.`);
+  while (trimmed.startsWith("(") && trimmed.endsWith(")")) {
+    const closingIndex = findBalancedClosingParen(trimmed);
+
+    if (closingIndex !== trimmed.length - 1) {
+      break;
     }
 
-    return parsed;
+    trimmed = trimmed.slice(1, -1).trim();
   }
 
-  if (kind === "word" || kind === "text" || kind === "string") {
-    return isQuoted(rawValue) ? stripQuotes(rawValue) : rawValue;
+  return trimmed;
+};
+
+const hasFriendlyMathWords = (value: string) =>
+  /\b(sum of|biggest number in|largest number in|smallest number in|size of|length of|first item in|last item in|number at|item .+ of|index pair from|plus|minus|times|divided by)\b/i.test(
+    value,
+  );
+
+const resolveVariable = (
+  token: string,
+  variables: Record<string, StoryValue>,
+): StoryValue | undefined => {
+  const cleaned = unwrapOuterParens(token);
+  const exactName = normalizeName(cleaned);
+
+  if (exactName in variables) {
+    return variables[exactName];
   }
 
-  return evaluateExpression(rawValue, {});
+  return undefined;
 };
 
 const resolveToken = (
   token: string,
   variables: Record<string, StoryValue>,
 ): StoryValue => {
-  const cleaned = token.trim();
+  const cleaned = unwrapOuterParens(token);
+  const variableValue = resolveVariable(cleaned, variables);
 
-  if (cleaned in variables) {
-    return variables[cleaned];
+  if (variableValue !== undefined) {
+    return variableValue;
   }
 
   return parseLiteral(cleaned);
 };
 
-const arithmeticTokenPattern = /"[^"]*"|'[^']*'|\b-?\d+(?:\.\d+)?\b|[a-zA-Z_][\w]*|[+\-*/]/g;
+const arithmeticTokenPattern =
+  /"[^"]*"|'[^']*'|\b-?\d+(?:\.\d+)?\b|[a-zA-Z_][\w]*|[+\-*/]/g;
 
 const isArithmeticOperator = (token: string) =>
   token === "+" || token === "-" || token === "*" || token === "/";
-
-const isPlainValueToken = (token: string) =>
-  !isArithmeticOperator(token);
 
 const resolveArithmeticValue = (
   token: string,
@@ -316,11 +376,55 @@ const findTwoSumPair = (items: StoryValue[], target: number): number[] => {
   return [];
 };
 
+const parseValueByKind = (
+  kind: string,
+  rawValue: string,
+  variableName: string,
+  variables: Record<string, StoryValue>,
+): StoryValue => {
+  if (kind === "list" || kind === "array") {
+    const cleaned = unwrapOuterParens(rawValue);
+
+    if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
+      const parsed = parseLiteral(cleaned);
+
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+
+    return parseList(cleaned);
+  }
+
+  if (kind === "number") {
+    return getNumber(resolveToken(rawValue, variables), variableName);
+  }
+
+  if (kind === "boolean" || kind === "flag") {
+    const parsed = resolveToken(rawValue, variables);
+
+    if (typeof parsed !== "boolean") {
+      throw new Error(`${variableName} should be true or false.`);
+    }
+
+    return parsed;
+  }
+
+  if (kind === "word" || kind === "text" || kind === "string") {
+    const cleaned = unwrapOuterParens(rawValue).trim();
+
+    return isQuoted(cleaned) ? stripQuotes(cleaned) : cleaned;
+  }
+
+  return evaluateExpression(rawValue, variables);
+};
+
 const evaluateExpression = (
   expression: string,
   variables: Record<string, StoryValue>,
+  options?: { allowBareWordText?: boolean },
 ): StoryValue => {
-  const trimmed = expression.trim();
+  const trimmed = unwrapOuterParens(expression);
   let match: RegExpMatchArray | null;
 
   match = trimmed.match(/^a list with (.+)$/i);
@@ -339,9 +443,9 @@ const evaluateExpression = (
     );
   }
 
-  match = trimmed.match(/^biggest number in (\w+)$/i);
+  match = trimmed.match(/^(biggest|largest) number in (\w+)$/i);
   if (match) {
-    const listName = normalizeName(match[1]);
+    const listName = normalizeName(match[2]);
     const list = getList(variables[listName], listName);
 
     return Math.max(...list.map((item) => getNumber(item, listName)));
@@ -355,9 +459,9 @@ const evaluateExpression = (
     return Math.min(...list.map((item) => getNumber(item, listName)));
   }
 
-  match = trimmed.match(/^size of (\w+)$/i);
+  match = trimmed.match(/^(size|length) of (\w+)$/i);
   if (match) {
-    const listName = normalizeName(match[1]);
+    const listName = normalizeName(match[2]);
     const list = getList(variables[listName], listName);
 
     return list.length;
@@ -384,6 +488,16 @@ const evaluateExpression = (
     const index = getNumber(resolveToken(match[1], variables), "index");
     const listName = normalizeName(match[2]);
     const list = getList(variables[listName], listName);
+
+    return list[index];
+  }
+
+  match = trimmed.match(/^item (.+) of (\w+)$/i);
+  if (match) {
+    const requestedIndex = getNumber(resolveToken(match[1], variables), "item number");
+    const listName = normalizeName(match[2]);
+    const list = getList(variables[listName], listName);
+    const index = Math.max(0, Math.floor(requestedIndex) - 1);
 
     return list[index];
   }
@@ -433,11 +547,380 @@ const evaluateExpression = (
     return evaluateArithmeticExpression(trimmed, variables);
   }
 
-  if (trimmed in variables) {
-    return variables[trimmed];
+  const variableValue = resolveVariable(trimmed, variables);
+
+  if (variableValue !== undefined) {
+    return variableValue;
   }
 
-  return parseLiteral(trimmed);
+  const literalValue = parseLiteral(trimmed);
+
+  if (typeof literalValue !== "string") {
+    return literalValue;
+  }
+
+  if (/^[a-zA-Z_][\w]*$/.test(trimmed) && !options?.allowBareWordText) {
+    throw new Error(
+      `I do not know "${trimmed}" yet. Make it first, or put it in quotes if it is just text.`,
+    );
+  }
+
+  if (hasFriendlyMathWords(trimmed)) {
+    throw new Error(`I could not finish that expression yet: "${trimmed}".`);
+  }
+
+  return literalValue;
+};
+
+const parseSourceLines = (source: string): ParsedLine[] =>
+  source
+    .split(/\r?\n/)
+    .map((line, index) => ({
+      raw: line,
+      lineNumber: index + 1,
+    }))
+    .filter((line) => line.raw.trim().length > 0)
+    .map((line) => ({
+      indent: (line.raw.match(/^\s*/) ?? [""])[0].replace(/\t/g, "  ").length,
+      lineNumber: line.lineNumber,
+      text: line.raw.trim(),
+    }));
+
+const pushGeneratedCode = (
+  generatedCode: string[],
+  code: string,
+  depth: number,
+) => {
+  generatedCode.push(`${"  ".repeat(depth)}${code}`);
+};
+
+const findBlockEnd = (
+  lines: ParsedLine[],
+  startIndex: number,
+  blockIndent: number,
+) => {
+  let index = startIndex;
+
+  while (index < lines.length && lines[index].indent >= blockIndent) {
+    index += 1;
+  }
+
+  return index;
+};
+
+const executeCommand = (
+  rawLine: string,
+  lineNumber: number,
+  jsDepth: number,
+  context: RuntimeContext,
+  emitCode = true,
+) => {
+  const cleanedLine = rawLine
+    .replace(/[.;]+$/, "")
+    .replace(/^print\s*\((.+)\)$/i, "print $1")
+    .replace(/^show\s*\((.+)\)$/i, "show $1")
+    .replace(/^say\s*\((.+)\)$/i, "say $1");
+
+  if (/^(#|\/\/)/.test(cleanedLine)) {
+    return;
+  }
+
+  let match: RegExpMatchArray | null;
+
+  try {
+    match = cleanedLine.match(
+      /^make (?:a )?(list|array|number|word|text|string|boolean|flag) called ([a-zA-Z][\w\s]*) (?:with|=) (.+)$/i,
+    );
+    if (match) {
+      const kind = match[1].toLowerCase();
+      const variableName = normalizeName(match[2]);
+      const rawValue = match[3].trim();
+      const value = parseValueByKind(kind, rawValue, variableName, context.variables);
+      const jsLine = defineOrAssign(context.variables, variableName, value);
+
+      context.variables[variableName] = value;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, jsLine, jsDepth);
+      }
+      context.steps.push(`Created ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(
+      /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/i,
+    );
+    if (match) {
+      const variableName = normalizeName(match[2]);
+      const value = evaluateExpression(match[3].trim(), context.variables);
+      const declarationKeyword = match[1].toLowerCase() === "const" ? "const" : "let";
+      const jsLine =
+        variableName in context.variables
+          ? `${variableName} = ${formatJsValue(value)};`
+          : `${declarationKeyword} ${variableName} = ${formatJsValue(value)};`;
+
+      context.variables[variableName] = value;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, jsLine, jsDepth);
+      }
+      context.steps.push(`Created ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^([a-zA-Z][\w]*)\s*=\s*(.+)$/);
+    if (match) {
+      const variableName = normalizeName(match[1]);
+      const value = evaluateExpression(match[2].trim(), context.variables);
+      const jsLine = defineOrAssign(context.variables, variableName, value);
+
+      context.variables[variableName] = value;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, jsLine, jsDepth);
+      }
+      context.steps.push(`Updated ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^set ([a-zA-Z][\w\s]*) (?:to|=) (.+)$/i);
+    if (match) {
+      const variableName = normalizeName(match[1]);
+      const expression = match[2].trim();
+      const value = evaluateExpression(expression, context.variables);
+      const jsLine = defineOrAssign(context.variables, variableName, value);
+
+      context.variables[variableName] = value;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, jsLine, jsDepth);
+      }
+      context.steps.push(`Updated ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^change ([a-zA-Z][\w\s]*) by (.+)$/i);
+    if (match) {
+      const variableName = normalizeName(match[1]);
+      const amount = getNumber(resolveToken(match[2], context.variables), "change amount");
+      const current = getNumber(context.variables[variableName], variableName);
+      const nextValue = current + amount;
+
+      context.variables[variableName] = nextValue;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, `${variableName} += ${amount};`, jsDepth);
+      }
+      context.steps.push(`Changed ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^add (.+) to ([a-zA-Z][\w\s]*)$/i);
+    if (match) {
+      const variableName = normalizeName(match[2]);
+      const currentValue = context.variables[variableName];
+
+      if (Array.isArray(currentValue)) {
+        const nextItem = resolveToken(match[1], context.variables);
+        const list = [...currentValue, nextItem];
+
+        context.variables[variableName] = list;
+        if (emitCode) {
+          pushGeneratedCode(
+            context.generatedCode,
+            `${variableName}.push(${formatJsValue(nextItem)});`,
+            jsDepth,
+          );
+        }
+        context.steps.push(`Added an item to ${variableName}.`);
+        return;
+      }
+
+      const valueToAdd = getNumber(resolveToken(match[1], context.variables), "added value");
+      const current = getNumber(currentValue, variableName);
+      const nextValue = current + valueToAdd;
+
+      context.variables[variableName] = nextValue;
+      if (emitCode) {
+        pushGeneratedCode(context.generatedCode, `${variableName} += ${valueToAdd};`, jsDepth);
+      }
+      context.steps.push(`Added to ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^(push|append) (.+) (?:into|to) ([a-zA-Z][\w\s]*)$/i);
+    if (match) {
+      const nextItem = resolveToken(match[2], context.variables);
+      const variableName = normalizeName(match[3]);
+      const list = [...getList(context.variables[variableName], variableName), nextItem];
+
+      context.variables[variableName] = list;
+      if (emitCode) {
+        pushGeneratedCode(
+          context.generatedCode,
+          `${variableName}.push(${formatJsValue(nextItem)});`,
+          jsDepth,
+        );
+      }
+      context.steps.push(`Added an item to ${variableName}.`);
+      return;
+    }
+
+    match = cleanedLine.match(/^(show|print|say)\s+(.+)$/i);
+    if (match) {
+      const allowBareWordText = match[1].toLowerCase() === "say";
+      const value = evaluateExpression(match[2], context.variables, {
+        allowBareWordText,
+      });
+
+      context.output.push(formatOutputValue(value));
+      if (emitCode) {
+        pushGeneratedCode(
+          context.generatedCode,
+          `console.log(${formatJsValue(value)});`,
+          jsDepth,
+        );
+      }
+      context.steps.push("Printed to the console.");
+      return;
+    }
+
+    throw new Error(
+      "I do not understand that line yet. Try friendly commands like 'say', 'repeat 10 times', 'make', 'set', 'change', 'add', or 'show'.",
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error.";
+    context.errors.push(`Line ${lineNumber}: ${message}`);
+  }
+};
+
+const executeRange = (
+  lines: ParsedLine[],
+  startIndex: number,
+  endIndex: number,
+  currentIndent: number,
+  jsDepth: number,
+  context: RuntimeContext,
+  emitCode = true,
+): number => {
+  let index = startIndex;
+
+  while (index < endIndex) {
+    const line = lines[index];
+
+    if (line.indent < currentIndent) {
+      return index;
+    }
+
+    if (line.indent > currentIndent) {
+      context.errors.push(
+        `Line ${line.lineNumber}: This line is indented more than I expected. Put it under a 'repeat ... times' block or move it back.`,
+      );
+      index += 1;
+      continue;
+    }
+
+    const repeatInlineMatch = line.text.match(/^repeat (.+?) times\s*:\s*(.+)$/i);
+    if (repeatInlineMatch) {
+      try {
+        const count = Math.max(
+          0,
+          Math.floor(
+            getNumber(
+              evaluateExpression(repeatInlineMatch[1], context.variables),
+              "repeat count",
+            ),
+          ),
+        );
+
+        if (emitCode) {
+          pushGeneratedCode(
+            context.generatedCode,
+            `for (let repeat_${line.lineNumber} = 0; repeat_${line.lineNumber} < ${count}; repeat_${line.lineNumber} += 1) {`,
+            jsDepth,
+          );
+        }
+
+        for (let repeatIndex = 0; repeatIndex < count; repeatIndex += 1) {
+          executeCommand(
+            repeatInlineMatch[2],
+            line.lineNumber,
+            jsDepth + 1,
+            context,
+            emitCode && repeatIndex === 0,
+          );
+        }
+
+        if (emitCode) {
+          pushGeneratedCode(context.generatedCode, "}", jsDepth);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error.";
+        context.errors.push(`Line ${line.lineNumber}: ${message}`);
+      }
+
+      index += 1;
+      continue;
+    }
+
+    const repeatMatch = line.text.match(/^repeat (.+?) times\s*:?\s*$/i);
+    if (repeatMatch) {
+      const nextLine = lines[index + 1];
+
+      if (!nextLine || nextLine.indent <= line.indent) {
+        context.errors.push(
+          `Line ${line.lineNumber}: 'repeat ... times' needs an indented action underneath it.`,
+        );
+        index += 1;
+        continue;
+      }
+
+      try {
+        const count = Math.max(
+          0,
+          Math.floor(
+            getNumber(
+              evaluateExpression(repeatMatch[1], context.variables),
+              "repeat count",
+            ),
+          ),
+        );
+        const blockIndent = nextLine.indent;
+        const blockEnd = findBlockEnd(lines, index + 1, blockIndent);
+
+        if (emitCode) {
+          pushGeneratedCode(
+            context.generatedCode,
+            `for (let repeat_${line.lineNumber} = 0; repeat_${line.lineNumber} < ${count}; repeat_${line.lineNumber} += 1) {`,
+            jsDepth,
+          );
+        }
+
+        for (let repeatIndex = 0; repeatIndex < count; repeatIndex += 1) {
+          executeRange(
+            lines,
+            index + 1,
+            blockEnd,
+            blockIndent,
+            jsDepth + 1,
+            context,
+            emitCode && repeatIndex === 0,
+          );
+        }
+
+        if (emitCode) {
+          pushGeneratedCode(context.generatedCode, "}", jsDepth);
+        }
+        index = blockEnd;
+        continue;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error.";
+        context.errors.push(`Line ${line.lineNumber}: ${message}`);
+        index += 1;
+        continue;
+      }
+    }
+
+    executeCommand(line.text, line.lineNumber, jsDepth, context, emitCode);
+    index += 1;
+  }
+
+  return index;
 };
 
 export const runStoryProgram = (source: string): StoryResult => {
@@ -446,120 +929,22 @@ export const runStoryProgram = (source: string): StoryResult => {
   const output: string[] = [];
   const steps: string[] = [];
   const errors: string[] = [];
+  const parsedLines = parseSourceLines(source);
 
-  const lines = source
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  lines.forEach((line, index) => {
-    const cleanedLine = line.replace(/[.;]+$/, "");
-    let match: RegExpMatchArray | null;
-
-    try {
-      match = cleanedLine.match(
-        /^make a (list|number|word|text|boolean|flag) called ([a-zA-Z][\w\s]*) with (.+)$/i,
-      );
-      if (match) {
-        const kind = match[1].toLowerCase();
-        const variableName = normalizeName(match[2]);
-        const rawValue = match[3].trim();
-
-        const value = parseValueByKind(kind, rawValue, variableName);
-
-        const jsLine = defineOrAssign(variables, variableName, value);
-        variables[variableName] = value;
-        generatedCode.push(jsLine);
-        steps.push(`Created ${variableName}.`);
-        return;
-      }
-
-      match = cleanedLine.match(
-        /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/i,
-      );
-      if (match) {
-        const variableName = normalizeName(match[2]);
-        const value = evaluateExpression(match[3].trim(), variables);
-        const declarationKeyword = match[1].toLowerCase() === "const" ? "const" : "let";
-        const jsLine =
-          variableName in variables
-            ? `${variableName} = ${formatJsValue(value)};`
-            : `${declarationKeyword} ${variableName} = ${formatJsValue(value)};`;
-
-        variables[variableName] = value;
-        generatedCode.push(jsLine);
-        steps.push(`Created ${variableName}.`);
-        return;
-      }
-
-      match = cleanedLine.match(/^([a-zA-Z][\w]*)\s*=\s*(.+)$/);
-      if (match) {
-        const variableName = normalizeName(match[1]);
-        const value = evaluateExpression(match[2].trim(), variables);
-        const jsLine = defineOrAssign(variables, variableName, value);
-
-        variables[variableName] = value;
-        generatedCode.push(jsLine);
-        steps.push(`Updated ${variableName}.`);
-        return;
-      }
-
-      match = cleanedLine.match(/^set ([a-zA-Z][\w\s]*) to (.+)$/i);
-      if (match) {
-        const variableName = normalizeName(match[1]);
-        const expression = match[2].trim();
-        const value = evaluateExpression(expression, variables);
-
-        const jsLine = defineOrAssign(variables, variableName, value);
-        variables[variableName] = value;
-        generatedCode.push(jsLine);
-        steps.push(`Updated ${variableName}.`);
-        return;
-      }
-
-      match = cleanedLine.match(/^add (.+) to ([a-zA-Z][\w\s]*)$/i);
-      if (match) {
-        const valueToAdd = getNumber(resolveToken(match[1], variables), "added value");
-        const variableName = normalizeName(match[2]);
-        const current = getNumber(variables[variableName], variableName);
-        const nextValue = current + valueToAdd;
-
-        variables[variableName] = nextValue;
-        generatedCode.push(`${variableName} += ${valueToAdd};`);
-        steps.push(`Added to ${variableName}.`);
-        return;
-      }
-
-      match = cleanedLine.match(/^push (.+) into ([a-zA-Z][\w\s]*)$/i);
-      if (match) {
-        const nextItem = resolveToken(match[1], variables);
-        const variableName = normalizeName(match[2]);
-        const list = [...getList(variables[variableName], variableName), nextItem];
-
-        variables[variableName] = list;
-        generatedCode.push(`${variableName}.push(${formatJsValue(nextItem)});`);
-        steps.push(`Pushed a value into ${variableName}.`);
-        return;
-      }
-
-      match = cleanedLine.match(/^(show|print)\s+(.+)$/i);
-      if (match) {
-        const value = evaluateExpression(match[2], variables);
-
-        output.push(formatOutputValue(value));
-        generatedCode.push(`console.log(${formatJsValue(value)});`);
-        steps.push("Printed to the console.");
-        return;
-      }
-
-      throw new Error(
-        "I do not understand that line yet. Use one action per line with commands like 'make', 'variable', 'set', 'add', 'push', 'show', or 'print'.",
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error.";
-      errors.push(`Line ${index + 1}: ${message}`);
-    }
-  });
+  executeRange(
+    parsedLines,
+    0,
+    parsedLines.length,
+    0,
+    0,
+    {
+      generatedCode,
+      output,
+      variables,
+      steps,
+      errors,
+    },
+  );
 
   return {
     generatedCode,
@@ -567,6 +952,6 @@ export const runStoryProgram = (source: string): StoryResult => {
     variables,
     steps,
     errors,
-    lineCount: lines.length,
+    lineCount: parsedLines.length,
   };
 };

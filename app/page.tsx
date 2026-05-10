@@ -16,30 +16,113 @@ const defaultResult: StoryResult = {
   lineCount: 0,
 };
 
-const languageGuide = [
-  "make a number called score with 10",
-  "variable text = \"hi\"",
-  "variable text: \"hi\"",
-  "let nums = [2, 7, 11, 15]",
-  "const target = 9",
-  "make a list called nums with 2, 7, 11, 15",
-  "make a word called greeting with Hello team",
-  "set total to sum of nums",
-  "set biggest to biggest number in nums",
-  "set pair to index pair from nums that adds to target",
-  "answer = sum of nums",
-  "add 3 to score",
-  "push 9 into nums",
-  "show total",
-  "print text",
-  "show score + 2",
-  "show number + number1 + number2 + number3",
-  "set lowest to smallest number in nums",
-  "set firstItem to first item in nums",
-  "set lastItem to last item in nums",
-  "set count to size of nums",
-  "set pair to index pair from nums that adds to target",
-  "show \"mission complete\"",
+const assistStorageKey = "story-code-lab-scratch-assist";
+
+type GuideEntry = {
+  scratch: string;
+  python: string;
+  note: string;
+};
+
+const languageGuide: GuideEntry[] = [
+  {
+    scratch: 'say "Hello!"',
+    python: 'print("Hello!")',
+    note: "Friendly output for beginners.",
+  },
+  {
+    scratch: "repeat 3 times\n  say \"beep\"",
+    python: "for i in range(3):\n    print(\"beep\")",
+    note: "Use repeat blocks now, loops later.",
+  },
+  {
+    scratch: "make a number called score with 10",
+    python: "score = 10",
+    note: "A simple variable with a name.",
+  },
+  {
+    scratch: "change score by 1",
+    python: "score += 1",
+    note: "Quick way to grow a number.",
+  },
+  {
+    scratch: "make a list called backpack with \"map\", \"snack\", \"rope\"",
+    python: "backpack = [\"map\", \"snack\", \"rope\"]",
+    note: "Lists hold multiple items.",
+  },
+  {
+    scratch: "add \"flashlight\" to backpack",
+    python: "backpack.append(\"flashlight\")",
+    note: "Adds one new item to a list.",
+  },
+  {
+    scratch: "set total to sum of nums",
+    python: "total = sum(nums)",
+    note: "Built-in helper for totals.",
+  },
+  {
+    scratch: "set tallest to biggest number in heights",
+    python: "tallest = max(heights)",
+    note: "Find the biggest value fast.",
+  },
+];
+
+type AutocompleteSnippet = {
+  description: string;
+  label: string;
+  snippet: string;
+  trigger: string;
+};
+
+const autocompleteSnippets: AutocompleteSnippet[] = [
+  {
+    trigger: "say",
+    label: 'say "..."',
+    snippet: 'say "<>"',
+    description: "Make the screen talk in a Scratch-style way.",
+  },
+  {
+    trigger: "show",
+    label: "show value",
+    snippet: "show <>total",
+    description: "Print a variable, number, or list.",
+  },
+  {
+    trigger: "repeat",
+    label: "repeat block",
+    snippet: 'repeat <>3 times\n  say "beep"',
+    description: "Create a small loop block with indentation.",
+  },
+  {
+    trigger: "make a list",
+    label: "make list",
+    snippet: 'make a list called <>items with "map", "snack", "rope"',
+    description: "Start a list of items.",
+  },
+  {
+    trigger: "make a number",
+    label: "make number",
+    snippet: "make a number called <>score with 10",
+    description: "Create a number variable.",
+  },
+  {
+    trigger: "set",
+    label: "set variable",
+    snippet: "set <>total to sum of nums",
+    description: "Set a variable to a new value.",
+  },
+  {
+    trigger: "change",
+    label: "change number",
+    snippet: "change <>score by 1",
+    description: "Increase or decrease a number.",
+  },
+  {
+    trigger: "add",
+    label: "add to list",
+    snippet: 'add <>"flashlight" to backpack',
+    description: "Add a new item into a list.",
+  },
 ];
 
 type EditorIssue = {
@@ -57,11 +140,15 @@ const commandKeywords = new Set([
   "answer",
   "add",
   "push",
+  "append",
+  "change",
+  "repeat",
   "show",
   "print",
+  "say",
 ]);
 
-const typeKeywords = new Set(["list", "number", "word", "text", "boolean", "flag"]);
+const typeKeywords = new Set(["list", "array", "number", "word", "text", "string", "boolean", "flag"]);
 
 const expressionKeywords = new Set([
   "called",
@@ -69,8 +156,10 @@ const expressionKeywords = new Set([
   "sum",
   "of",
   "biggest",
+  "largest",
   "smallest",
   "size",
+  "length",
   "first",
   "last",
   "item",
@@ -158,16 +247,107 @@ const suggestCommand = (token: string) => {
   return best.distance <= 2 ? best.command : null;
 };
 
+const stripCaretMarker = (value: string) => value.replace("<>", "");
+
+const getSnippetMatch = (linePrefix: string) => {
+  const normalizedPrefix = linePrefix.trim().toLowerCase();
+
+  if (!normalizedPrefix) {
+    return null;
+  }
+
+  const matches = autocompleteSnippets.filter((snippet) =>
+    snippet.trigger.startsWith(normalizedPrefix),
+  );
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return matches.sort((left, right) => left.trigger.length - right.trigger.length)[0];
+};
+
+const getLineRange = (value: string, selectionStart: number, selectionEnd: number) => {
+  const lineStart = value.lastIndexOf("\n", Math.max(selectionStart - 1, 0)) + 1;
+  const nextBreak = value.indexOf("\n", selectionEnd);
+  const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+
+  return { lineEnd, lineStart };
+};
+
+const indentSnippet = (snippet: string, indent: string) =>
+  snippet
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n");
+
+const getAutocompletePreview = (
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+) => {
+  if (selectionStart !== selectionEnd) {
+    return null;
+  }
+
+  const { lineStart } = getLineRange(value, selectionStart, selectionEnd);
+  const beforeCaret = value.slice(lineStart, selectionStart);
+  const snippet = getSnippetMatch(beforeCaret);
+
+  if (!snippet) {
+    return null;
+  }
+
+  return {
+    ...snippet,
+    preview: stripCaretMarker(snippet.snippet),
+  };
+};
+
+const applyAutocomplete = (
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+) => {
+  const { lineEnd, lineStart } = getLineRange(value, selectionStart, selectionEnd);
+  const fullLine = value.slice(lineStart, lineEnd);
+  const beforeCaret = value.slice(lineStart, selectionStart);
+  const snippet = getSnippetMatch(beforeCaret);
+
+  if (!snippet) {
+    return null;
+  }
+
+  const indent = (fullLine.match(/^\s*/) ?? [""])[0];
+  const expandedSnippet = indentSnippet(snippet.snippet, indent);
+  const caretOffset = expandedSnippet.indexOf("<>");
+  const completedLine = stripCaretMarker(expandedSnippet);
+  const nextValue = `${value.slice(0, lineStart)}${completedLine}${value.slice(lineEnd)}`;
+  const nextCaret = lineStart + (caretOffset === -1 ? completedLine.length : caretOffset);
+
+  return {
+    nextCaret,
+    nextValue,
+    snippet,
+  };
+};
+
 const lintProgram = (program: string): EditorIssue[] => {
   const issues: EditorIssue[] = [];
   const knownNames = new Set<string>();
   const lines = program.split(/\r?\n/);
+  const blockStack: number[] = [];
 
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
+  lines.forEach((rawLine, index) => {
+    const trimmed = rawLine.trim();
+    const indent = (rawLine.match(/^\s*/) ?? [""])[0].replace(/\t/g, "  ").length;
 
     if (!trimmed) {
       return;
+    }
+
+    while (blockStack.length > 0 && indent <= blockStack[blockStack.length - 1]) {
+      blockStack.pop();
     }
 
     const firstToken = (trimmed.match(/^([a-zA-Z_][\w-]*)/) ?? [""])[1];
@@ -178,6 +358,14 @@ const lintProgram = (program: string): EditorIssue[] => {
 
     const isAssignmentLike = /^([a-zA-Z_][\w]*)\s*[:=]/.test(trimmed);
     const lowerFirst = firstToken.toLowerCase();
+
+    if (indent > 0 && blockStack.length === 0) {
+      issues.push({
+        line: index + 1,
+        token: firstToken,
+        message: "This indented line needs to sit under a repeat block.",
+      });
+    }
 
     if (!commandKeywords.has(lowerFirst) && !isAssignmentLike) {
       const suggestion = suggestCommand(firstToken);
@@ -194,7 +382,7 @@ const lintProgram = (program: string): EditorIssue[] => {
 
     if (lowerFirst === "make") {
       const makePattern =
-        /^make a (list|number|word|text|boolean|flag) called ([a-zA-Z][\w\s]*) with (.+)$/i;
+        /^make (?:a )?(list|array|number|word|text|string|boolean|flag) called ([a-zA-Z][\w\s]*) (?:with|=) (.+)$/i;
 
       if (!makePattern.test(trimmed)) {
         issues.push({
@@ -203,9 +391,7 @@ const lintProgram = (program: string): EditorIssue[] => {
           message: "Expected: make a <type> called <name> with <value>",
         });
       } else {
-        const createdName = trimmed.match(
-          /^make a (list|number|word|text|boolean|flag) called ([a-zA-Z][\w\s]*) with (.+)$/i,
-        );
+        const createdName = trimmed.match(makePattern);
 
         if (createdName) {
           knownNames.add(normalizeEditorName(createdName[2]));
@@ -213,11 +399,26 @@ const lintProgram = (program: string): EditorIssue[] => {
       }
     }
 
-    if ((lowerFirst === "show" || lowerFirst === "print") && !/^(show|print)\s+.+$/i.test(trimmed)) {
+    if (lowerFirst === "repeat") {
+      if (!/^repeat .+ times(\s*:\s*.+)?\s*$/i.test(trimmed)) {
+        issues.push({
+          line: index + 1,
+          token: "repeat",
+          message: "Expected: repeat <number> times",
+        });
+      } else if (!/:/.test(trimmed)) {
+        blockStack.push(indent);
+      }
+    }
+
+    if (
+      ["show", "print", "say"].includes(lowerFirst) &&
+      !/^(show|print|say)\s*(\(.+\)|.+)$/i.test(trimmed)
+    ) {
       issues.push({
         line: index + 1,
         token: firstToken,
-        message: "Expected a value after show/print.",
+        message: "Expected a value after say/show/print.",
       });
     }
 
@@ -234,8 +435,8 @@ const lintProgram = (program: string): EditorIssue[] => {
       knownNames.add(normalizeEditorName(assignMatch[1]));
     }
 
-    if (lowerFirst === "show" || lowerFirst === "print") {
-      const expression = trimmed.replace(/^(show|print)\s+/i, "").trim();
+    if (["show", "print"].includes(lowerFirst)) {
+      const expression = trimmed.replace(/^(show|print)\s*/i, "").replace(/^\((.+)\)$/i, "$1").trim();
       const expressionTokens = expression.match(arithmeticTokenPattern) ?? [];
 
       if (expressionTokens.some(isArithmeticOperator)) {
@@ -302,6 +503,22 @@ const lintProgram = (program: string): EditorIssue[] => {
         line: index + 1,
         token: firstToken,
         message: "Expected: variable name = value (or name: value)",
+      });
+    }
+
+    if (lowerFirst === "set" && !/^set [a-zA-Z][\w\s]* (?:to|=) .+$/i.test(trimmed)) {
+      issues.push({
+        line: index + 1,
+        token: firstToken,
+        message: "Expected: set <name> to <value>",
+      });
+    }
+
+    if (lowerFirst === "change" && !/^change [a-zA-Z][\w\s]* by .+$/i.test(trimmed)) {
+      issues.push({
+        line: index + 1,
+        token: firstToken,
+        message: "Expected: change <name> by <number>",
       });
     }
   });
@@ -417,14 +634,24 @@ export default function Home() {
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const editorBackdropRef = useRef<HTMLPreElement | null>(null);
   const editorGutterRef = useRef<HTMLDivElement | null>(null);
+  const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [showCommandsPanel, setShowCommandsPanel] = useState(false);
   const [successFlash, setSuccessFlash] = useState(false);
   const [showTutorialCard, setShowTutorialCard] = useState(true);
+  const [scratchAssistEnabled, setScratchAssistEnabled] = useState(true);
+  const [editorSelection, setEditorSelection] = useState({ start: 0, end: 0 });
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
   const liveIssues = useMemo(() => lintProgram(program), [program]);
   const programLines = useMemo(() => program.split(/\r?\n/), [program]);
+  const autocompletePreview = useMemo(
+    () =>
+      scratchAssistEnabled
+        ? getAutocompletePreview(program, editorSelection.start, editorSelection.end)
+        : null,
+    [editorSelection.end, editorSelection.start, program, scratchAssistEnabled],
+  );
 
   const highlightedProgram = useMemo(() => {
     const issueTokensByLine = new Map<number, Map<string, string[]>>();
@@ -455,6 +682,14 @@ export default function Home() {
       } catch {
         window.localStorage.removeItem(completionStorageKey);
       }
+    }
+  }, []);
+
+  useEffect(() => {
+    const savedAssistMode = window.localStorage.getItem(assistStorageKey);
+
+    if (savedAssistMode) {
+      setScratchAssistEnabled(savedAssistMode === "on");
     }
   }, []);
 
@@ -501,12 +736,20 @@ export default function Home() {
   }, [layout]);
 
   useEffect(() => {
+    window.localStorage.setItem(
+      assistStorageKey,
+      scratchAssistEnabled ? "on" : "off",
+    );
+  }, [scratchAssistEnabled]);
+
+  useEffect(() => {
     setResult(defaultResult);
     setCelebration("");
     setShowHint(false);
     setRunState("idle");
     setSuccessFlash(false);
     setShowCommandsPanel(false);
+    setEditorSelection({ start: 0, end: 0 });
   }, [activeChallenge]);
 
   useEffect(() => {
@@ -538,6 +781,78 @@ export default function Home() {
       ...current,
       [activeChallenge.id]: value,
     }));
+  };
+
+  const syncEditorSelection = (target: HTMLTextAreaElement) => {
+    setEditorSelection({
+      start: target.selectionStart,
+      end: target.selectionEnd,
+    });
+  };
+
+  const updateProgramAndSelection = (
+    nextValue: string,
+    nextStart: number,
+    nextEnd = nextStart,
+  ) => {
+    updateProgram(nextValue);
+
+    requestAnimationFrame(() => {
+      if (!editorInputRef.current) {
+        return;
+      }
+
+      editorInputRef.current.focus();
+      editorInputRef.current.setSelectionRange(nextStart, nextEnd);
+      setEditorSelection({ start: nextStart, end: nextEnd });
+    });
+  };
+
+  const insertAtSelection = (
+    valueToInsert: string,
+    target: HTMLTextAreaElement,
+  ) => {
+    const nextValue =
+      program.slice(0, target.selectionStart) +
+      valueToInsert +
+      program.slice(target.selectionEnd);
+    const nextCaret = target.selectionStart + valueToInsert.length;
+
+    updateProgramAndSelection(nextValue, nextCaret);
+  };
+
+  const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const target = event.currentTarget;
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+
+      if (scratchAssistEnabled) {
+        const completion = applyAutocomplete(
+          program,
+          target.selectionStart,
+          target.selectionEnd,
+        );
+
+        if (completion) {
+          updateProgramAndSelection(completion.nextValue, completion.nextCaret);
+          return;
+        }
+      }
+
+      insertAtSelection("  ", target);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      const { lineStart } = getLineRange(program, target.selectionStart, target.selectionEnd);
+      const currentLine = program.slice(lineStart, target.selectionStart);
+      const currentIndent = (currentLine.match(/^\s*/) ?? [""])[0];
+      const extraIndent = /^repeat .+ times\s*:?\s*$/i.test(currentLine.trim()) ? "  " : "";
+
+      event.preventDefault();
+      insertAtSelection(`\n${currentIndent}${extraIndent}`, target);
+    }
   };
 
   const runProgram = () => {
@@ -596,12 +911,12 @@ export default function Home() {
     runState === "success"
       ? "This run solved the mission."
       : runState === "error"
-        ? "The program ran into a sentence or type error."
+        ? "The code hit a real problem. Check the line notes and try again."
         : runState === "not-yet"
-          ? "Your program ran, but it did not meet the pass condition yet."
+          ? "Your code ran, but it has not finished the mission yet."
           : activeMissionComplete
             ? "This mission was already cleared before."
-            : "Write your sentences and press Run.";
+            : "Write your code, then press Run.";
 
   const runtimeProblems = result.errors.map((error, index) => ({
     id: `runtime-${index}`,
@@ -821,7 +1136,7 @@ export default function Home() {
   const commandReferencePanel = showCommandsPanel ? (
     <div className="command-popout" role="dialog" aria-label="Command reference">
       <div className="command-popout-header">
-        <strong>Command Reference</strong>
+        <strong>Scratch To Python Guide</strong>
         <button
           className="secondary-button"
           onClick={() => setShowCommandsPanel(false)}
@@ -830,12 +1145,23 @@ export default function Home() {
           Close
         </button>
       </div>
-      <p className="guide-copy">Quick patterns you can use anywhere in the missions.</p>
+      <p className="guide-copy">
+        Use the Scratch-style version on the left. The Python version is there so kids can see
+        where they are heading next.
+      </p>
       <div className="guide-list">
-        {languageGuide.map((line) => (
-          <code key={line} className="guide-line">
-            {line}
-          </code>
+        {languageGuide.map((entry) => (
+          <div key={entry.scratch} className="guide-card">
+            <div>
+              <span className="guide-label">Scratch-style now</span>
+              <code className="guide-line">{entry.scratch}</code>
+            </div>
+            <div>
+              <span className="guide-label">Python later</span>
+              <code className="guide-line">{entry.python}</code>
+            </div>
+            <p className="guide-note">{entry.note}</p>
+          </div>
         ))}
       </div>
     </div>
@@ -845,23 +1171,23 @@ export default function Home() {
     <div className="tutorial-banner" role="region" aria-label="Tutorial">
       <div className="tutorial-badge">Start Here</div>
       <div className="tutorial-content">
-        <h2>Learn by playing</h2>
+        <h2>Scratch first, Python next</h2>
         <p>
-          This place mixes Scratch-style friendly steps with a code editor. Read the goal, write one line at a
-          time, then run it to see the console change.
+          This game starts with easy commands like <code>say</code> and <code>repeat 3 times</code>,
+          then slowly points toward real Python. Read the mission, type one idea at a time, and run it.
         </p>
         <div className="tutorial-steps">
           <div className="tutorial-step">
             <strong>1. Read the mission</strong>
-            <span>Each level gives you a small job.</span>
+            <span>Each level gives you a small job with a clear goal.</span>
           </div>
           <div className="tutorial-step">
             <strong>2. Type your code</strong>
-            <span>Try simple variable words, lists, and show commands.</span>
+            <span>Try kid-friendly commands like say, repeat, make, set, and change.</span>
           </div>
           <div className="tutorial-step">
             <strong>3. Run and check</strong>
-            <span>The console and Problems panel tell you what happened.</span>
+            <span>The console and Problems tab explain what worked and what needs fixing.</span>
           </div>
         </div>
       </div>
@@ -874,7 +1200,7 @@ export default function Home() {
           onClick={() => setShowCommandsPanel(true)}
           type="button"
         >
-          Open command tab
+          Open syntax guide
         </button>
         <button
           className="secondary-button"
@@ -893,8 +1219,8 @@ export default function Home() {
         <header className="topbar">
           <div className="brand-block">
             <div>
-              <p className="brand-kicker">Story Code Lab</p>
-              <h1>Sentence Coding Studio</h1>
+              <p className="brand-kicker">Scratch To Python</p>
+              <h1>Mission Code Lab</h1>
             </div>
           </div>
 
@@ -914,7 +1240,7 @@ export default function Home() {
 
             <div className="explorer-note">
               <strong>Choose a path</strong>
-              <span>Blue tags are friendly lessons. Locked missions open as you finish the one before.</span>
+              <span>Start small, clear each mission, and unlock the next one like a game map.</span>
             </div>
 
             <div className="mission-list">
@@ -1010,7 +1336,7 @@ export default function Home() {
                   onClick={() => setShowCommandsPanel((current) => !current)}
                   type="button"
                 >
-                  Command reference
+                  Syntax guide
                 </button>
               </div>
 
@@ -1024,6 +1350,13 @@ export default function Home() {
                   type="button"
                 >
                   {showHint ? "Hide hint" : "Need a hint?"}
+                </button>
+                <button
+                  className={`secondary-button ${scratchAssistEnabled ? "mode-button-active" : ""}`}
+                  onClick={() => setScratchAssistEnabled((current) => !current)}
+                  type="button"
+                >
+                  {scratchAssistEnabled ? "Scratch assist: on" : "Scratch assist: off"}
                 </button>
                 <button
                   className="secondary-button"
@@ -1045,10 +1378,21 @@ export default function Home() {
               <strong>Today&apos;s lesson</strong>
               <span>
                 {activeIndex === 0
-                  ? "Start with the tutorial, then move through the adventure line by line."
-                  : `You are on mission ${activeIndex + 1}. Finish this one to unlock the next.`}
+                  ? "Start with say and simple messages. You do not need perfect Python on day one."
+                  : `Mission ${activeIndex + 1} builds on the one before it. Scratch-style code is allowed here.`}
               </span>
             </div>
+
+            {scratchAssistEnabled ? (
+              <div className="assist-strip">
+                <strong>Scratch assist</strong>
+                <span>
+                  {autocompletePreview
+                    ? `Press Tab to complete: ${autocompletePreview.preview}`
+                    : "Press Tab to autocomplete commands like say, repeat, make a list, or change score by 1."}
+                </span>
+              </div>
+            ) : null}
 
             <div className="editor-shell">
               <div className="editor-gutter" ref={editorGutterRef} aria-hidden="true">
@@ -1066,11 +1410,19 @@ export default function Home() {
                 />
                 <textarea
                   className="editor-input"
-                  placeholder={"Write one action per line."}
+                  placeholder={"Write one action per line. Try: say \"Hello!\""}
+                  ref={editorInputRef}
                   spellCheck={false}
                   value={program}
-                  onChange={(event) => updateProgram(event.target.value)}
+                  onChange={(event) => {
+                    updateProgram(event.target.value);
+                    syncEditorSelection(event.currentTarget);
+                  }}
+                  onClick={(event) => syncEditorSelection(event.currentTarget)}
+                  onKeyDown={handleEditorKeyDown}
+                  onKeyUp={(event) => syncEditorSelection(event.currentTarget)}
                   onScroll={syncEditorScroll}
+                  onSelect={(event) => syncEditorSelection(event.currentTarget)}
                 />
               </div>
             </div>
@@ -1128,8 +1480,10 @@ export default function Home() {
                 </div>
               ) : null}
               <div className="goal-box guide-box">
-                <strong>Command reference</strong>
-                <p className="guide-copy">Open the tab above to see syntax examples.</p>
+                <strong>Bridge to Python</strong>
+                <p className="guide-copy">
+                  Use Scratch-style commands here. Open the syntax guide to compare them with Python.
+                </p>
               </div>
               </div>
 

@@ -45,6 +45,10 @@ textarea {
   font: inherit;
 }
 
+code {
+  font-family: var(--font-ibm-plex-mono, "Consolas", monospace);
+}
+
 .app-shell {
   height: 100vh;
   padding: 0;
@@ -428,6 +432,12 @@ textarea {
   background: #fff;
 }
 
+.mode-button-active {
+  border-color: #1b7f6a;
+  background: #eefaf6;
+  color: #145948;
+}
+
 .primary-button,
 .secondary-button,
 .output-tab {
@@ -733,8 +743,27 @@ textarea {
 
 .guide-list {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   margin-top: 8px;
+}
+
+.guide-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fffdf9;
+}
+
+.guide-label {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #695d52;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .guide-line {
@@ -747,6 +776,13 @@ textarea {
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.guide-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .code-card {
@@ -931,6 +967,29 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: linear-gradient(135deg, #fff8ef, #eef6ff);
+}
+
+.assist-strip {
+  margin: 0 12px 10px;
+  padding: 10px 12px;
+  border: 1px solid #b7dfd5;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #effcf7, #f7fffd);
+}
+
+.assist-strip strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #1a6a59;
+}
+
+.assist-strip span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .lesson-strip strong {
