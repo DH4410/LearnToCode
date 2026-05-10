@@ -32,6 +32,14 @@ const languageGuide = [
   "push 9 into nums",
   "show total",
   "print text",
+  "show score + 2",
+  "show number + number1 + number2 + number3",
+  "set lowest to smallest number in nums",
+  "set firstItem to first item in nums",
+  "set lastItem to last item in nums",
+  "set count to size of nums",
+  "set pair to index pair from nums that adds to target",
+  "show \"mission complete\"",
 ];
 
 type EditorIssue = {
@@ -411,6 +419,7 @@ export default function Home() {
   const editorGutterRef = useRef<HTMLDivElement | null>(null);
   const [showCommandsPanel, setShowCommandsPanel] = useState(false);
   const [successFlash, setSuccessFlash] = useState(false);
+  const [showTutorialCard, setShowTutorialCard] = useState(true);
 
   const activeChallenge = challenges[activeIndex];
   const program = drafts[activeChallenge.id] ?? "";
@@ -497,6 +506,7 @@ export default function Home() {
     setShowHint(false);
     setRunState("idle");
     setSuccessFlash(false);
+    setShowCommandsPanel(false);
   }, [activeChallenge]);
 
   useEffect(() => {
@@ -549,6 +559,15 @@ export default function Home() {
       setCelebration(`Mission complete: ${activeChallenge.title}`);
       setRunState("success");
       setSuccessFlash(true);
+
+      const nextChallengeIndex = Math.min(activeIndex + 1, challenges.length - 1);
+
+      if (nextChallengeIndex > activeIndex) {
+        setTimeout(() => {
+          setActiveIndex(nextChallengeIndex);
+        }, 350);
+      }
+
       return;
     }
 
@@ -799,6 +818,75 @@ export default function Home() {
     </div>
   );
 
+  const commandReferencePanel = showCommandsPanel ? (
+    <div className="command-popout" role="dialog" aria-label="Command reference">
+      <div className="command-popout-header">
+        <strong>Command Reference</strong>
+        <button
+          className="secondary-button"
+          onClick={() => setShowCommandsPanel(false)}
+          type="button"
+        >
+          Close
+        </button>
+      </div>
+      <p className="guide-copy">Quick patterns you can use anywhere in the missions.</p>
+      <div className="guide-list">
+        {languageGuide.map((line) => (
+          <code key={line} className="guide-line">
+            {line}
+          </code>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
+  const tutorialPanel = showTutorialCard ? (
+    <div className="tutorial-banner" role="region" aria-label="Tutorial">
+      <div className="tutorial-badge">Start Here</div>
+      <div className="tutorial-content">
+        <h2>Learn by playing</h2>
+        <p>
+          This place mixes Scratch-style friendly steps with a code editor. Read the goal, write one line at a
+          time, then run it to see the console change.
+        </p>
+        <div className="tutorial-steps">
+          <div className="tutorial-step">
+            <strong>1. Read the mission</strong>
+            <span>Each level gives you a small job.</span>
+          </div>
+          <div className="tutorial-step">
+            <strong>2. Type your code</strong>
+            <span>Try simple variable words, lists, and show commands.</span>
+          </div>
+          <div className="tutorial-step">
+            <strong>3. Run and check</strong>
+            <span>The console and Problems panel tell you what happened.</span>
+          </div>
+        </div>
+      </div>
+      <div className="tutorial-actions">
+        <button className="primary-button" onClick={() => setActiveIndex(0)} type="button">
+          Start Tutorial
+        </button>
+        <button
+          className="secondary-button"
+          onClick={() => setShowCommandsPanel(true)}
+          type="button"
+        >
+          Open command tab
+        </button>
+        <button
+          className="secondary-button"
+          onClick={() => setShowTutorialCard(false)}
+          type="button"
+        >
+          Skip for now
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <main className="app-shell">
       <section className="ide-window">
@@ -817,10 +905,17 @@ export default function Home() {
           </div>
         </header>
 
+        {tutorialPanel}
+
         <section className="workspace-body">
           <section className="ide-grid" style={ideGridStyle}>
             <aside className="sidebar panel-surface">
-            <div className="section-label">Explorer</div>
+            <div className="section-label section-label-accent">Explorer</div>
+
+            <div className="explorer-note">
+              <strong>Choose a path</strong>
+              <span>Blue tags are friendly lessons. Locked missions open as you finish the one before.</span>
+            </div>
 
             <div className="mission-list">
               {(() => {
@@ -834,7 +929,7 @@ export default function Home() {
 
                 return Array.from(map.entries()).map(([category, items]) => (
                   <div key={category} style={{ marginBottom: 8 }}>
-                    <div className="section-label">{category}</div>
+                    <div className="section-label section-label-category">{category}</div>
                     {items.map((challenge) => {
                       const index = challenges.findIndex((ch) => ch.id === challenge.id);
                       const unlocked = canOpenChallenge(index);
@@ -855,8 +950,12 @@ export default function Home() {
                           type="button"
                         >
                           <div className="file-row">
-                            <span className="file-icon" />
+                            <span className={`file-icon file-icon-${category.toLowerCase().replace(/[^a-z]/g, "-")}`} />
                             <strong>{challenge.title}.story</strong>
+                          </div>
+                          <div className="mission-pill-row">
+                            <span className="mission-pill">{challenge.badge}</span>
+                            <span className="mission-pill mission-pill-secondary">{category}</span>
                           </div>
                           <span className="mission-status">
                             {complete ? "done" : unlocked ? challenge.badge.toLowerCase() : "locked"}
@@ -870,7 +969,7 @@ export default function Home() {
             </div>
 
             <div className="sidebar-footer">
-              <div className="section-label">Progress</div>
+              <div className="section-label section-label-accent">Progress</div>
               <div className="sidebar-progress">
                 <div className="progress-bar">
                   <div
@@ -906,6 +1005,13 @@ export default function Home() {
               <div className="tab-row">
                 <span className="file-tab active">{activeChallenge.title}.story</span>
                 <span className="file-tab muted">console.txt</span>
+                <button
+                  className={`file-tab command-tab ${showCommandsPanel ? "active" : ""}`}
+                  onClick={() => setShowCommandsPanel((current) => !current)}
+                  type="button"
+                >
+                  Command reference
+                </button>
               </div>
 
               <div className="action-row">
@@ -935,6 +1041,15 @@ export default function Home() {
               <span>{statusLabel}</span>
             </div>
 
+            <div className="lesson-strip">
+              <strong>Today&apos;s lesson</strong>
+              <span>
+                {activeIndex === 0
+                  ? "Start with the tutorial, then move through the adventure line by line."
+                  : `You are on mission ${activeIndex + 1}. Finish this one to unlock the next.`}
+              </span>
+            </div>
+
             <div className="editor-shell">
               <div className="editor-gutter" ref={editorGutterRef} aria-hidden="true">
                 {Array.from({ length: editorLineCount }, (_, index) => (
@@ -962,7 +1077,7 @@ export default function Home() {
 
             <div className="editor-footer">
               <span>{lineCount} lines</span>
-              <span>{showHint ? activeChallenge.hint : "Hint is hidden."}</span>
+              <span>{showHint ? activeChallenge.hint : "Tip is tucked away."}</span>
               <span className={`footer-status footer-status-${runState}`}>
                 {allProblems.length > 0
                   ? `${allProblems.length} problem${allProblems.length > 1 ? "s" : ""}`
@@ -1012,27 +1127,9 @@ export default function Home() {
                   <p>{activeChallenge.hint}</p>
                 </div>
               ) : null}
-                <div className="goal-box guide-box">
-                <button
-                  className="secondary-button"
-                  onClick={() => setShowCommandsPanel((s) => !s)}
-                  type="button"
-                >
-                  {showCommandsPanel ? "Hide reference" : "Command reference"}
-                </button>
-
-                {showCommandsPanel ? (
-                  <div style={{ marginTop: 8 }}>
-                    <p className="guide-copy">Quick syntax reference.</p>
-                    <div className="guide-list">
-                      {languageGuide.map((line) => (
-                        <code key={line} className="guide-line">
-                          {line}
-                        </code>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+              <div className="goal-box guide-box">
+                <strong>Command reference</strong>
+                <p className="guide-copy">Open the tab above to see syntax examples.</p>
               </div>
               </div>
 
@@ -1077,6 +1174,7 @@ export default function Home() {
             </aside>
           </section>
         </section>
+        {commandReferencePanel}
       </section>
     </main>
   );

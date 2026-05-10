@@ -1,17 +1,22 @@
 :root {
-  --bg: #f3f3f3;
+  --bg: #f7f5ef;
   --panel: #ffffff;
-  --panel-muted: #f7f7f7;
-  --sidebar: #f8f8f8;
-  --border: #d4d4d4;
-  --border-strong: #bdbdbd;
-  --text: #1f1f1f;
-  --muted: #616161;
-  --accent: #007acc;
-  --accent-soft: #e6f2fb;
-  --success: #1a7f37;
-  --warning: #a15c00;
-  --error: #b42318;
+  --panel-muted: #fffaf2;
+  --sidebar: #fffdf8;
+  --border: #ddd3c4;
+  --border-strong: #c4b8a4;
+  --text: #1f1a17;
+  --muted: #6d6258;
+  --accent: #4e8cff;
+  --accent-soft: #e7f0ff;
+  --success: #1f9d55;
+  --warning: #c16b06;
+  --error: #d64545;
+  --tutorial: #7b68ee;
+  --tutorial-soft: #efeaff;
+  --mint: #2fbf9a;
+  --sun: #ffb347;
+  --coral: #ff7f6b;
 }
 
 * {
@@ -29,6 +34,10 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-space-grotesk, "Segoe UI", sans-serif);
+  background-image:
+    radial-gradient(circle at top left, rgba(78, 140, 255, 0.12), transparent 32%),
+    radial-gradient(circle at top right, rgba(255, 179, 71, 0.16), transparent 28%),
+    linear-gradient(180deg, #fffdf8 0%, #f7f5ef 100%);
 }
 
 button,
@@ -45,7 +54,7 @@ textarea {
   height: 100%;
   display: grid;
   grid-template-rows: 44px minmax(0, 1fr);
-  background: var(--panel);
+  background: linear-gradient(180deg, #ffffff 0%, #fffdfb 100%);
 }
 
 .workspace-body {
@@ -61,7 +70,7 @@ textarea {
   gap: 16px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel-muted);
+  background: linear-gradient(90deg, #fff7e8 0%, #f8fbff 100%);
 }
 
 .brand-block {
@@ -80,8 +89,8 @@ textarea {
 
 .brand-block h1 {
   margin: 1px 0 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .topbar-stats {
@@ -99,9 +108,79 @@ textarea {
   grid-template-columns: 220px 6px minmax(0, 1fr) 6px 320px;
 }
 
+.tutorial-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff7df 0%, #eef6ff 55%, #f8f2ff 100%);
+  box-shadow: 0 10px 30px rgba(72, 62, 52, 0.08);
+}
+
+.tutorial-badge {
+  align-self: start;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--tutorial);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tutorial-content h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.tutorial-content p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.tutorial-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tutorial-step {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.tutorial-step strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #2b2430;
+}
+
+.tutorial-step span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.tutorial-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+
 .panel-surface {
   min-height: 0;
   background: var(--panel);
+  border-radius: 18px;
 }
 
 .resize-handle {
@@ -137,7 +216,7 @@ textarea {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   border-right: 1px solid var(--border);
-  background: var(--sidebar);
+  background: linear-gradient(180deg, #fffdf8 0%, #fff8ef 100%);
 }
 
 .section-label {
@@ -149,6 +228,33 @@ textarea {
   text-transform: uppercase;
 }
 
+.section-label-accent {
+  color: #3b4d8c;
+}
+
+.section-label-category {
+  color: #7a4c1a;
+}
+
+.explorer-note {
+  margin: 0 12px 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff8ec;
+}
+
+.explorer-note strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.explorer-note span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .mission-list {
   min-height: 0;
   overflow: auto;
@@ -158,20 +264,23 @@ textarea {
   width: 100%;
   padding: 8px 12px;
   border: 0;
-  border-left: 2px solid transparent;
+  border-left: 4px solid transparent;
   background: transparent;
   color: var(--text);
   text-align: left;
   cursor: pointer;
+  border-radius: 0 14px 14px 0;
+  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
 }
 
 .mission-card:hover:not(:disabled) {
-  background: #efefef;
+  background: #fff5db;
+  transform: translateX(2px);
 }
 
 .mission-card.active {
-  background: #e8e8e8;
-  border-left-color: var(--accent);
+  background: #eef5ff;
+  border-left-color: var(--tutorial);
 }
 
 .mission-card.complete .mission-status {
@@ -192,9 +301,27 @@ textarea {
 }
 
 .file-icon {
-  width: 10px;
+  width: 12px;
   height: 12px;
   background: var(--accent);
+  border-radius: 4px;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.file-icon-tutorial {
+  background: var(--tutorial);
+}
+
+.file-icon-data {
+  background: var(--mint);
+}
+
+.file-icon-algorithms {
+  background: var(--sun);
+}
+
+.file-icon-control-flow {
+  background: var(--coral);
 }
 
 .mission-status {
@@ -202,6 +329,29 @@ textarea {
   color: var(--muted);
   font-size: 11px;
   text-transform: capitalize;
+}
+
+.mission-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mission-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: #3356aa;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mission-pill-secondary {
+  background: #fff1df;
+  color: #9a5a15;
 }
 
 .sidebar-footer {
@@ -240,7 +390,7 @@ textarea {
   gap: 12px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel-muted);
+  background: linear-gradient(90deg, #fff4d9 0%, #f2f7ff 100%);
 }
 
 .tab-row,
@@ -254,8 +404,9 @@ textarea {
 .file-tab {
   padding: 6px 10px;
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: #fff;
   font-size: 12px;
+  border-radius: 999px;
 }
 
 .file-tab.active {
@@ -268,6 +419,15 @@ textarea {
   background: var(--panel-muted);
 }
 
+.command-tab {
+  margin-left: 2px;
+}
+
+.command-tab.active {
+  border-color: var(--accent);
+  background: #fff;
+}
+
 .primary-button,
 .secondary-button,
 .output-tab {
@@ -276,6 +436,7 @@ textarea {
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
+  border-radius: 999px;
 }
 
 .primary-button {
@@ -297,7 +458,7 @@ textarea {
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
-  background: #fcfcfc;
+  background: #fffbf3;
 }
 
 .editor-shell {
@@ -306,14 +467,14 @@ textarea {
   grid-template-columns: 56px minmax(0, 1fr);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #fffef9 100%);
 }
 
 .editor-gutter {
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--border);
-  background: #f5f5f5;
+  background: #fff7ea;
   color: #8a8a8a;
   font-family: var(--font-ibm-plex-mono, "Consolas", monospace);
   font-size: 13px;
@@ -348,7 +509,7 @@ textarea {
 
 .editor-highlight {
   color: #202020;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #fffefa 100%);
   pointer-events: none;
 }
 
@@ -368,24 +529,24 @@ textarea {
 }
 
 .tok-command {
-  color: #005cc5;
-  font-weight: 600;
+  color: #2f6df6;
+  font-weight: 700;
 }
 
 .tok-type {
-  color: #6f42c1;
+  color: #8e44ad;
 }
 
 .tok-keyword {
-  color: #0366d6;
+  color: #1d7f6d;
 }
 
 .tok-string {
-  color: #22863a;
+  color: #b25a00;
 }
 
 .tok-number {
-  color: #b31d28;
+  color: #c0392b;
 }
 
 .tok-operator {
@@ -533,6 +694,36 @@ textarea {
   margin-top: 10px;
 }
 
+.command-popout {
+  position: fixed;
+  top: 66px;
+  right: 16px;
+  z-index: 50;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 92px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(16, 24, 40, 0.18);
+}
+
+.command-popout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.command-popout-header strong {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .guide-copy {
   margin: 6px 0 0;
   color: var(--muted);
@@ -566,6 +757,7 @@ textarea {
 
 .terminal-panel {
   border-top: 1px solid var(--border);
+  border-radius: 18px 18px 0 0;
 }
 
 .terminal-success {
@@ -652,6 +844,10 @@ textarea {
 }
 
 .terminal-panel .code-view {
+  background: #ffffff;
+}
+
+.terminal-panel .code-view {
   border-top: 0;
   border-left: 0;
   border-right: 0;
@@ -672,7 +868,7 @@ textarea {
   margin-bottom: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  background: #f7f9fc;
+  background: #f5f7ff;
   color: var(--text);
 }
 
@@ -729,6 +925,40 @@ textarea {
   }
 }
 
+.lesson-strip {
+  margin: 0 12px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff8ef, #eef6ff);
+}
+
+.lesson-strip strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4d4182;
+}
+
+.lesson-strip span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.command-popout {
+  border-radius: 18px;
+}
+
+.command-popout-header {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
 @keyframes success-pulse {
   0%,
   100% {
@@ -766,6 +996,27 @@ textarea {
     min-height: 100vh;
   }
 
+  .command-popout {
+    position: static;
+    width: auto;
+    max-height: none;
+    margin: 12px;
+  }
+
+  .tutorial-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .tutorial-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .tutorial-actions {
+    min-width: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
   .dock-row {
     display: none;
   }
@@ -781,6 +1032,10 @@ textarea {
 
   .editor-column {
     min-height: 520px;
+  }
+
+  .lesson-strip {
+    margin: 0 12px 10px;
   }
 
   .dock-row {
