@@ -83,6 +83,18 @@ const expressionKeywords = new Set([
   "and",
 ]);
 
+const arithmeticTokenPattern = /"[^"]*"|'[^']*'|\b-?\d+(?:\.\d+)?\b|[a-zA-Z_][\w]*|[+\-*/]/g;
+
+const isArithmeticOperator = (token: string) =>
+  token === "+" || token === "-" || token === "*" || token === "/";
+
+const isKnownValueToken = (token: string, knownNames: Set<string>) =>
+  /^-?\d+(?:\.\d+)?$/.test(token) ||
+  /^"[^"]*"$|^'[^']*'$/.test(token) ||
+  knownNames.has(token.toLowerCase());
+
+const normalizeEditorName = (value: string) => value.trim().replace(/\s+/g, "_");
+
 const escapeHtml = (value: string) =>
   value
     .replaceAll("&", "&amp;")
@@ -140,6 +152,7 @@ const suggestCommand = (token: string) => {
 
 const lintProgram = (program: string): EditorIssue[] => {
   const issues: EditorIssue[] = [];
+  const knownNames = new Set<string>();
   const lines = program.split(/\r?\n/);
 
   lines.forEach((line, index) => {
@@ -181,6 +194,14 @@ const lintProgram = (program: string): EditorIssue[] => {
           token: "make",
           message: "Expected: make a <type> called <name> with <value>",
         });
+      } else {
+        const createdName = trimmed.match(
+          /^make a (list|number|word|text|boolean|flag) called ([a-zA-Z][\w\s]*) with (.+)$/i,
+        );
+
+        if (createdName) {
+          knownNames.add(normalizeEditorName(createdName[2]));
+        }
       }
     }
 
@@ -190,6 +211,79 @@ const lintProgram = (program: string): EditorIssue[] => {
         token: firstToken,
         message: "Expected a value after show/print.",
       });
+    }
+
+    const declarationMatch = trimmed.match(
+      /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/i,
+    );
+
+    if (declarationMatch) {
+      knownNames.add(normalizeEditorName(declarationMatch[2]));
+    }
+
+    const assignMatch = trimmed.match(/^([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/);
+    if (assignMatch) {
+      knownNames.add(normalizeEditorName(assignMatch[1]));
+    }
+
+    if (lowerFirst === "show" || lowerFirst === "print") {
+      const expression = trimmed.replace(/^(show|print)\s+/i, "").trim();
+      const expressionTokens = expression.match(arithmeticTokenPattern) ?? [];
+
+      if (expressionTokens.some(isArithmeticOperator)) {
+        let expectValue = true;
+        let previousToken = "";
+        let addedIssue = false;
+
+        for (const token of expressionTokens) {
+          if (expectValue) {
+            if (isArithmeticOperator(token)) {
+              issues.push({
+                line: index + 1,
+                token,
+                message: `Expected a value before "${token}".`,
+              });
+              addedIssue = true;
+              break;
+            }
+
+            if (!isKnownValueToken(token, knownNames)) {
+              issues.push({
+                line: index + 1,
+                token,
+                message: `Unknown value "${token}".`,
+              });
+              addedIssue = true;
+              break;
+            }
+
+            expectValue = false;
+            previousToken = token;
+            continue;
+          }
+
+          if (!isArithmeticOperator(token)) {
+            issues.push({
+              line: index + 1,
+              token,
+              message: `Missing operator between "${previousToken}" and "${token}".`,
+            });
+            addedIssue = true;
+            break;
+          }
+
+          expectValue = true;
+          previousToken = token;
+        }
+
+        if (!addedIssue && expectValue) {
+          issues.push({
+            line: index + 1,
+            token: expressionTokens[expressionTokens.length - 1] ?? "",
+            message: "An expression cannot end with an operator.",
+          });
+        }
+      }
     }
 
     if (

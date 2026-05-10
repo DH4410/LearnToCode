@@ -204,6 +204,96 @@ const resolveToken = (
   return parseLiteral(cleaned);
 };
 
+const arithmeticTokenPattern = /"[^"]*"|'[^']*'|\b-?\d+(?:\.\d+)?\b|[a-zA-Z_][\w]*|[+\-*/]/g;
+
+const isArithmeticOperator = (token: string) =>
+  token === "+" || token === "-" || token === "*" || token === "/";
+
+const isPlainValueToken = (token: string) =>
+  !isArithmeticOperator(token);
+
+const resolveArithmeticValue = (
+  token: string,
+  variables: Record<string, StoryValue>,
+): number => {
+  const resolved = resolveToken(token, variables);
+
+  if (typeof resolved === "number") {
+    return resolved;
+  }
+
+  throw new Error(`"${token}" should be a number.`);
+};
+
+const evaluateArithmeticExpression = (
+  expression: string,
+  variables: Record<string, StoryValue>,
+): StoryValue => {
+  const tokens = expression.match(arithmeticTokenPattern) ?? [];
+
+  if (tokens.length === 0) {
+    return parseLiteral(expression);
+  }
+
+  const values: number[] = [];
+  const operators: string[] = [];
+  let expectValue = true;
+  let previousToken = "";
+
+  for (const token of tokens) {
+    if (expectValue) {
+      if (isArithmeticOperator(token)) {
+        throw new Error(`Expected a value before "${token}".`);
+      }
+
+      values.push(resolveArithmeticValue(token, variables));
+      expectValue = false;
+      previousToken = token;
+      continue;
+    }
+
+    if (!isArithmeticOperator(token)) {
+      throw new Error(`Missing operator between "${previousToken}" and "${token}".`);
+    }
+
+    operators.push(token);
+    expectValue = true;
+    previousToken = token;
+  }
+
+  if (expectValue) {
+    throw new Error("An expression cannot end with an operator.");
+  }
+
+  const reducedValues: number[] = [values[0]];
+  const reducedOperators: string[] = [];
+
+  for (let index = 0; index < operators.length; index += 1) {
+    const operator = operators[index];
+    const right = values[index + 1];
+
+    if (operator === "*" || operator === "/") {
+      const left = reducedValues.pop() ?? 0;
+      reducedValues.push(operator === "*" ? left * right : left / right);
+      continue;
+    }
+
+    reducedOperators.push(operator);
+    reducedValues.push(right);
+  }
+
+  let result = reducedValues[0];
+
+  for (let index = 0; index < reducedOperators.length; index += 1) {
+    const operator = reducedOperators[index];
+    const right = reducedValues[index + 1];
+
+    result = operator === "+" ? result + right : result - right;
+  }
+
+  return result;
+};
+
 const findTwoSumPair = (items: StoryValue[], target: number): number[] => {
   const seen = new Map<number, number>();
 
@@ -337,6 +427,10 @@ const evaluateExpression = (
     const right = resolveToken(match[2], variables);
 
     return getNumber(left, "left side") / getNumber(right, "right side");
+  }
+
+  if (/[+\-*/]/.test(trimmed)) {
+    return evaluateArithmeticExpression(trimmed, variables);
   }
 
   if (trimmed in variables) {
