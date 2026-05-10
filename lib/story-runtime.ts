@@ -381,7 +381,7 @@ export const runStoryProgram = (source: string): StoryResult => {
       }
 
       match = cleanedLine.match(
-        /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*=\s*(.+)$/i,
+        /^(variable|let|const)\s+([a-zA-Z][\w]*)\s*[:=]\s*(.+)$/i,
       );
       if (match) {
         const variableName = normalizeName(match[2]);

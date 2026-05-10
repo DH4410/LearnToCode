@@ -19,6 +19,7 @@ const defaultResult: StoryResult = {
 const languageGuide = [
   "make a number called score with 10",
   "variable text = \"hi\"",
+  "variable text: \"hi\"",
   "let nums = [2, 7, 11, 15]",
   "const target = 9",
   "make a list called nums with 2, 7, 11, 15",
@@ -154,7 +155,7 @@ const lintProgram = (program: string): EditorIssue[] => {
       return;
     }
 
-    const isAssignmentLike = /^([a-zA-Z_][\w]*)\s*=/.test(trimmed);
+    const isAssignmentLike = /^([a-zA-Z_][\w]*)\s*[:=]/.test(trimmed);
     const lowerFirst = firstToken.toLowerCase();
 
     if (!commandKeywords.has(lowerFirst) && !isAssignmentLike) {
@@ -188,6 +189,17 @@ const lintProgram = (program: string): EditorIssue[] => {
         line: index + 1,
         token: firstToken,
         message: "Expected a value after show/print.",
+      });
+    }
+
+    if (
+      ["variable", "let", "const"].includes(lowerFirst) &&
+      !/^(variable|let|const)\s+[a-zA-Z][\w]*\s*[:=]\s*.+$/i.test(trimmed)
+    ) {
+      issues.push({
+        line: index + 1,
+        token: firstToken,
+        message: "Expected: variable name = value (or name: value)",
       });
     }
   });
@@ -247,6 +259,8 @@ type LayoutState = {
   leftWidth: number;
   rightWidth: number;
   missionHeight: number;
+  bottomTerminalHeight: number;
+  terminalDock: "right" | "bottom";
 };
 
 type DragState =
@@ -264,6 +278,16 @@ type DragState =
       type: "mission";
       startY: number;
       startHeight: number;
+    }
+  | {
+      type: "terminal-bottom";
+      startY: number;
+      startHeight: number;
+    }
+  | {
+      type: "terminal-dock";
+      startX: number;
+      startY: number;
     };
 
 export default function Home() {
@@ -281,6 +305,8 @@ export default function Home() {
     leftWidth: 220,
     rightWidth: 320,
     missionHeight: 330,
+    bottomTerminalHeight: 240,
+    terminalDock: "right",
   });
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
@@ -330,6 +356,9 @@ export default function Home() {
           leftWidth: parsed.leftWidth ?? current.leftWidth,
           rightWidth: parsed.rightWidth ?? current.rightWidth,
           missionHeight: parsed.missionHeight ?? current.missionHeight,
+          bottomTerminalHeight:
+            parsed.bottomTerminalHeight ?? current.bottomTerminalHeight,
+          terminalDock: parsed.terminalDock ?? current.terminalDock,
         }));
       } catch {
         window.localStorage.removeItem(layoutStorageKey);
@@ -486,6 +515,39 @@ export default function Home() {
       return;
     }
 
+    if (dragState.type === "terminal-bottom") {
+      const nextHeight = clamp(
+        dragState.startHeight - (event.clientY - dragState.startY),
+        160,
+        460,
+      );
+
+      setLayout((current) => ({
+        ...current,
+        bottomTerminalHeight: nextHeight,
+      }));
+      return;
+    }
+
+    if (dragState.type === "terminal-dock") {
+      const deltaX = event.clientX - dragState.startX;
+      const deltaY = event.clientY - dragState.startY;
+
+      if (Math.abs(deltaY) > Math.abs(deltaX) + 24) {
+        setLayout((current) => ({
+          ...current,
+          terminalDock: "bottom",
+        }));
+      } else if (Math.abs(deltaX) > Math.abs(deltaY) + 24) {
+        setLayout((current) => ({
+          ...current,
+          terminalDock: "right",
+        }));
+      }
+
+      return;
+    }
+
     const maxMissionHeight = Math.max(220, window.innerHeight - 240);
     const nextHeight = clamp(
       dragState.startHeight + (event.clientY - dragState.startY),
@@ -512,7 +574,11 @@ export default function Home() {
     window.addEventListener("pointerup", handlePointerUp);
     document.body.style.userSelect = "none";
     document.body.style.cursor =
-      dragState.type === "mission" ? "row-resize" : "col-resize";
+      dragState.type === "mission" || dragState.type === "terminal-bottom"
+        ? "row-resize"
+        : dragState.type === "terminal-dock"
+          ? "move"
+          : "col-resize";
 
     return () => {
       window.removeEventListener("pointermove", handleDragMove);
@@ -531,22 +597,148 @@ export default function Home() {
   const inspectorStyle = isCompactLayout
     ? undefined
     : {
-        gridTemplateRows: `${layout.missionHeight}px 6px minmax(0, 1fr)`,
+        gridTemplateRows:
+          layout.terminalDock === "right"
+            ? `${layout.missionHeight}px 6px minmax(0, 1fr)`
+            : "minmax(0, 1fr)",
       };
 
-    const syncEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
-      const nextTop = event.currentTarget.scrollTop;
-      const nextLeft = event.currentTarget.scrollLeft;
+  const workspaceBodyStyle =
+    isCompactLayout || layout.terminalDock !== "bottom"
+      ? undefined
+      : {
+          gridTemplateRows: `minmax(0, 1fr) 6px ${layout.bottomTerminalHeight}px`,
+        };
 
-      if (editorBackdropRef.current) {
-        editorBackdropRef.current.scrollTop = nextTop;
-        editorBackdropRef.current.scrollLeft = nextLeft;
-      }
+  const syncEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
+    const nextTop = event.currentTarget.scrollTop;
+    const nextLeft = event.currentTarget.scrollLeft;
 
-      if (editorGutterRef.current) {
-        editorGutterRef.current.scrollTop = nextTop;
-      }
-    };
+    if (editorBackdropRef.current) {
+      editorBackdropRef.current.scrollTop = nextTop;
+      editorBackdropRef.current.scrollLeft = nextLeft;
+    }
+
+    if (editorGutterRef.current) {
+      editorGutterRef.current.scrollTop = nextTop;
+    }
+  };
+
+  const terminalPanel = (
+    <div className="panel-surface code-card terminal-panel">
+      <div className="terminal-topbar">
+        <div className="output-tabs">
+          <button
+            className={`output-tab ${outputTab === "terminal" ? "active" : ""}`}
+            onClick={() => setOutputTab("terminal")}
+            type="button"
+          >
+            Terminal
+          </button>
+          <button
+            className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
+            onClick={() => setOutputTab("javascript")}
+            type="button"
+          >
+            JavaScript
+          </button>
+          <button
+            className={`output-tab ${outputTab === "problems" ? "active" : ""}`}
+            onClick={() => setOutputTab("problems")}
+            type="button"
+          >
+            Problems
+          </button>
+        </div>
+        <div className="dock-row">
+          <span
+            className="dock-handle"
+            onPointerDown={(event) => {
+              if (isCompactLayout) {
+                return;
+              }
+
+              event.preventDefault();
+              setDragState({
+                type: "terminal-dock",
+                startX: event.clientX,
+                startY: event.clientY,
+              });
+            }}
+            role="button"
+            tabIndex={0}
+          >
+            Drag to move
+          </span>
+          <button
+            className={`output-tab ${layout.terminalDock === "right" ? "active" : ""}`}
+            onClick={() =>
+              setLayout((current) => ({
+                ...current,
+                terminalDock: "right",
+              }))
+            }
+            type="button"
+          >
+            Right
+          </button>
+          <button
+            className={`output-tab ${layout.terminalDock === "bottom" ? "active" : ""}`}
+            onClick={() =>
+              setLayout((current) => ({
+                ...current,
+                terminalDock: "bottom",
+              }))
+            }
+            type="button"
+          >
+            Bottom
+          </button>
+        </div>
+      </div>
+      <pre className="code-view">
+        {outputTab === "terminal"
+          ? result.output.length > 0
+            ? [`$ run ${activeChallenge.title}.story`, ...result.output].join("\n")
+            : "$ Run your code to see output."
+          : result.generatedCode.length > 0
+            ? outputTab === "javascript"
+              ? result.generatedCode.join("\n")
+              : allProblems
+                  .map((problem) =>
+                    problem.line
+                      ? `Line ${problem.line}: ${problem.message}`
+                      : problem.message,
+                  )
+                  .join("\n")
+            : outputTab === "javascript"
+              ? "// Translated JavaScript will appear here."
+              : allProblems.length > 0
+                ? allProblems
+                    .map((problem) =>
+                      problem.line
+                        ? `Line ${problem.line}: ${problem.message}`
+                        : problem.message,
+                    )
+                    .join("\n")
+                : "No problems found."}
+      </pre>
+      <div className="debug-list">
+        {allProblems.length > 0 ? (
+          allProblems.map((problem) => (
+            <p key={problem.id} className="error-line">
+              {problem.line ? `Line ${problem.line}: ` : ""}
+              {problem.message}
+            </p>
+          ))
+        ) : result.steps.length > 0 ? (
+          result.steps.map((step) => <p key={step}>{step}</p>)
+        ) : (
+          <p>Status messages will appear here after you run the mission.</p>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <main className="app-shell">
@@ -566,7 +758,8 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="ide-grid" style={ideGridStyle}>
+        <section className="workspace-body" style={workspaceBodyStyle}>
+          <section className="ide-grid" style={ideGridStyle}>
           <aside className="sidebar panel-surface">
             <div className="section-label">Explorer</div>
 
@@ -759,91 +952,54 @@ export default function Home() {
               </div>
             </div>
 
-            <div
-              aria-label="Resize mission panel"
-              className="resize-handle resize-handle-horizontal"
-              onPointerDown={(event) => {
-                if (isCompactLayout) {
-                  return;
-                }
+            {layout.terminalDock === "right" ? (
+              <>
+                <div
+                  aria-label="Resize mission panel"
+                  className="resize-handle resize-handle-horizontal"
+                  onPointerDown={(event) => {
+                    if (isCompactLayout) {
+                      return;
+                    }
 
-                event.preventDefault();
-                setDragState({
-                  type: "mission",
-                  startY: event.clientY,
-                  startHeight: layout.missionHeight,
-                });
-              }}
-              role="separator"
-            />
-
-            <div className="panel-surface code-card">
-              <div className="output-tabs">
-                <button
-                  className={`output-tab ${outputTab === "terminal" ? "active" : ""}`}
-                  onClick={() => setOutputTab("terminal")}
-                  type="button"
-                >
-                  Terminal
-                </button>
-                <button
-                  className={`output-tab ${outputTab === "javascript" ? "active" : ""}`}
-                  onClick={() => setOutputTab("javascript")}
-                  type="button"
-                >
-                  JavaScript
-                </button>
-                <button
-                  className={`output-tab ${outputTab === "problems" ? "active" : ""}`}
-                  onClick={() => setOutputTab("problems")}
-                  type="button"
-                >
-                  Problems
-                </button>
-              </div>
-              <pre className="code-view">
-                {outputTab === "terminal"
-                  ? result.output.length > 0
-                    ? [`$ run ${activeChallenge.title}.story`, ...result.output].join("\n")
-                    : "$ Run your code to see output."
-                  : result.generatedCode.length > 0
-                    ? outputTab === "javascript"
-                      ? result.generatedCode.join("\n")
-                      : allProblems
-                          .map((problem) =>
-                            problem.line
-                              ? `Line ${problem.line}: ${problem.message}`
-                              : problem.message,
-                          )
-                          .join("\n")
-                    : outputTab === "javascript"
-                      ? "// Translated JavaScript will appear here."
-                      : allProblems.length > 0
-                        ? allProblems
-                            .map((problem) =>
-                              problem.line
-                                ? `Line ${problem.line}: ${problem.message}`
-                                : problem.message,
-                            )
-                            .join("\n")
-                        : "No problems found."}
-              </pre>
-              <div className="debug-list">
-                {allProblems.length > 0 ? (
-                  allProblems.map((problem) => (
-                    <p key={problem.id} className="error-line">
-                      {problem.line ? `Line ${problem.line}: ` : ""}
-                      {problem.message}
-                    </p>
-                  ))
-                ) : result.steps.length > 0 ? (
-                  result.steps.map((step) => <p key={step}>{step}</p>)
-                ) : (
-                  <p>Status messages will appear here after you run the mission.</p>
-                )}
-              </div>
-            </div>
+                    event.preventDefault();
+                    setDragState({
+                      type: "mission",
+                      startY: event.clientY,
+                      startHeight: layout.missionHeight,
+                    });
+                  }}
+                  role="separator"
+                />
+                {terminalPanel}
+              </>
+            ) : null}
           </aside>
+
+          </section>
+
+          {layout.terminalDock === "bottom" ? (
+            <>
+              <div
+                aria-label="Resize bottom terminal"
+                className="resize-handle resize-handle-horizontal"
+                onPointerDown={(event) => {
+                  if (isCompactLayout) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  setDragState({
+                    type: "terminal-bottom",
+                    startY: event.clientY,
+                    startHeight: layout.bottomTerminalHeight,
+                  });
+                }}
+                role="separator"
+              />
+              {terminalPanel}
+            </>
+          ) : null}
         </section>
       </section>
     </main>

@@ -25,11 +25,9 @@ const outputHas = (result: StoryResult, text: string) =>
 const hasListValue = (result: StoryResult, target: number[]) =>
   Object.values(result.variables).some((value) => sameArray(value, target));
 
-const hasAnyList = (result: StoryResult) =>
-  Object.values(result.variables).some((value) => Array.isArray(value));
-
-const hasNumberValue = (result: StoryResult, target: number) =>
-  Object.values(result.variables).some((value) => value === target);
+const outputContains = (result: StoryResult, text: string) =>
+  result.errors.length === 0 &&
+  result.output.some((line) => line.trim().toLowerCase().includes(text.toLowerCase()));
 
 export const challenges: Challenge[] = [
   {
@@ -37,18 +35,16 @@ export const challenges: Challenge[] = [
     title: "Echo Canyon",
     badge: "Warm-up",
     story:
-      "The canyon robot only wakes up when it hears a cheerful first message from a new coder.",
+      "Your scout drone is trying to sync with a mountain relay. It only connects when your opening message sounds human and confident.",
     mission:
-      "Make the robot say a friendly greeting in the console using your own words.",
-    winText: "Pass when the console prints a greeting sentence.",
-    hint: "Create a word, then show it. Example idea: make a word called greeting with Hello bright canyon!",
+      "Print any custom intro line in the console. Add your name, team, mood, or mission code.",
+    winText: "Pass when at least one line prints with no errors.",
+    hint: "Any style is valid: variable text = \"Hi\", variable text: \"Hi\", or just show \"Hi\".",
     starter: "",
     placeholder:
-      "One action per line.\n\nIdeas:\nvariable text = \"Hello bright canyon!\"\nshow text",
+      "One action per line.\n\nIdeas:\nvariable text: \"Pilot Nova online\"\nshow text\n\nOr:\nshow \"Relay check complete\"",
     check: (result) =>
       result.errors.length === 0 &&
-      result.lineCount >= 2 &&
-      Object.keys(result.variables).length >= 1 &&
       result.output.length > 0,
   },
   {
@@ -56,17 +52,16 @@ export const challenges: Challenge[] = [
     title: "Snack Counter",
     badge: "Logic",
     story:
-      "Camp leaders dumped four apple baskets onto the table and need a super fast total before lunch starts.",
+      "You are running a festival food truck. Four runners delivered snack crates and the line is growing fast.",
     mission:
-      "Count apples from the list 3, 5, 2, 4 and print the final total for the team.",
+      "Use numbers 3, 5, 2, 4 and print the final snack total before the timer hits zero.",
     winText: "Pass when the console shows 14.",
-    hint: "Make a list first. Then create a new value from the sum of that list and show it.",
+    hint: "You can solve it in multiple ways: list + sum, direct math, or a variable that becomes 14.",
     starter: "",
     placeholder:
-      "One action per line.\n\nExample styles:\nmake a list called apples with 3, 5, 2, 4\nset total to sum of apples\nshow total",
+      "One action per line.\n\nExample styles:\nmake a list called snacks with 3, 5, 2, 4\nset total to sum of snacks\nshow total",
     check: (result) =>
-      result.lineCount >= 3 &&
-      hasListValue(result, [3, 5, 2, 4]) &&
+      result.errors.length === 0 &&
       outputHas(result, "14"),
   },
   {
@@ -74,17 +69,16 @@ export const challenges: Challenge[] = [
     title: "Mountain Watch",
     badge: "Data",
     story:
-      "A tiny drone scanned the mountain trail, but the rescue team only cares about the tallest peak right now.",
+      "A weather balloon streamed five peak heights, and your control room needs the highest value for a storm alert.",
     mission:
-      "Use the height list 4, 12, 7, 18, 9 and report the tallest mountain in the console.",
+      "Use heights 4, 12, 7, 18, 9 and report the tallest peak in the console.",
     winText: "Pass when the console shows 18.",
-    hint: "There is a built-in phrase for this: biggest number in your list.",
+    hint: "Try biggest number in heights, but any valid path to output 18 is accepted.",
     starter: "",
     placeholder:
       "One action per line.\n\nUse the heights 4, 12, 7, 18, 9.\nMake a list, find the biggest number, then show it.",
     check: (result) =>
-      result.lineCount >= 3 &&
-      hasListValue(result, [4, 12, 7, 18, 9]) &&
+      result.errors.length === 0 &&
       outputHas(result, "18"),
   },
   {
@@ -92,20 +86,21 @@ export const challenges: Challenge[] = [
     title: "Two Sum Quest",
     badge: "Challenge",
     story:
-      "A rover found a hidden gate. It opens only when you name the two index spots whose numbers combine to the target energy.",
+      "You reached a vault door with a dual-pin lock. It opens when you output two index slots whose values combine to the target charge.",
     mission:
       "Use the numbers 2, 7, 11, 15 and the target 9. Print the matching pair of index spots.",
     winText: "Pass when the console shows [0, 1].",
-    hint: "After making the list and target, ask for the index pair from your list that adds to the target.",
+    hint: "Built-in phrase: index pair from nums that adds to target. Output [0, 1] or [1, 0].",
     starter: "",
     placeholder:
       "One action per line.\n\nExample styles:\nlet nums = [2, 7, 11, 15]\nlet target = 9\npair = index pair from nums that adds to target\nshow pair",
     check: (result) =>
-      result.lineCount >= 4 &&
       result.errors.length === 0 &&
-      hasListValue(result, [2, 7, 11, 15]) &&
-      hasNumberValue(result, 9) &&
       (sameArray(result.variables.pair, [0, 1]) ||
-        result.output.includes("[0, 1]")),
+        sameArray(result.variables.pair, [1, 0]) ||
+        outputContains(result, "[0, 1]") ||
+        outputContains(result, "[1, 0]") ||
+        outputContains(result, "0, 1") ||
+        outputContains(result, "1, 0")),
   },
 ];
